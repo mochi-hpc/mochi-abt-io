@@ -1,0 +1,2 @@
+src_libabt_io_a_SOURCES += \
+ src/abt-io.c
