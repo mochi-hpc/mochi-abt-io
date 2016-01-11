@@ -1,6 +1,6 @@
 bin_PROGRAMS += examples/concurrent-write-bench
 
 examples_concurrent_write_bench_SOURCES = \
- examples/concurrent-write-bench.c \
-examples_client_LDADD = src/libabt-io.a
+ examples/concurrent-write-bench.c
+examples_concurrent_write_bench_LDADD = src/libabt-io.a
 

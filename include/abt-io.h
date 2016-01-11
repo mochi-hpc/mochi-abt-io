@@ -28,7 +28,7 @@ abt_io_instance_id abt_io_init(ABT_pool progress_pool);
 
 /**
  * Shuts down abt_io library and its underlying resources
- * @param [in] aid Margo instance
+ * @param [in] aid abt-io instance
  */
 void abt_io_finalize(abt_io_instance_id aid);
 

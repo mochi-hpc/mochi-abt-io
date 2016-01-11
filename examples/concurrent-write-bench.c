@@ -31,6 +31,7 @@ struct write_abt_arg
     off_t *next_offset;
     int fd;
     double duration;
+    abt_io_instance_id aid;
 };
 
 static void write_abt_bench(void *_arg);
@@ -252,8 +253,7 @@ static void pthread_bench(unsigned int concurrency, size_t size, double duration
 
 static void write_abt_bench(void *_arg)
 {
-#if 0
-    struct write_fbr_arg* arg = _arg;
+    struct write_abt_arg* arg = _arg;
     off_t my_offset;
     void *buffer;
     size_t ret;
@@ -265,17 +265,16 @@ static void write_abt_bench(void *_arg)
     double now = wtime();
     while((now-arg->start_time) < arg->duration) 
     {
-        fbr_mutex_lock(FBR_A_ arg->mutex);
+        ABT_mutex_lock(*arg->mutex);
         my_offset = *arg->next_offset;
         (*arg->next_offset) += arg->size;
-        fbr_mutex_unlock(FBR_A_ arg->mutex);
+        ABT_mutex_unlock(*arg->mutex);
 
-        ret = fbr_eio_write(FBR_A_ arg->fd, buffer, arg->size, my_offset, 0);
+        ret = abt_io_pwrite(arg->aid, arg->fd, buffer, arg->size, my_offset);
         assert(ret == arg->size);
 
         now = wtime();
     }
-#endif
     return;
 }
 
