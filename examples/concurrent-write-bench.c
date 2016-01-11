@@ -11,6 +11,9 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#include <abt.h>
+#include <abt-io.h>
+
 /* This is a simple benchmark that measures the
  * streaming, concurrent, sequentially-issued write throughput for a 
  * specified number of concurrent operations.  It includes an abt-io version and
@@ -24,7 +27,7 @@ struct write_abt_arg
 {
     double start_time;
     size_t size;
-    // struct fbr_mutex *mutex;
+    ABT_mutex *mutex;
     off_t *next_offset;
     int fd;
     double duration;
@@ -115,16 +118,13 @@ int main(int argc, char **argv)
 static void abt_bench(unsigned int concurrency, size_t size, double duration,
     const char *filename, unsigned int* ops_done, double *seconds)
 {
-#if 0
-    fbr_id_t *id_array = NULL;
-    struct fbr_context context;
-    struct fbr_mutex mutex;
-    struct write_fbr_arg arg;
+    ABT_thread *tid_array = NULL;
+    ABT_mutex mutex;
+    struct write_abt_arg arg;
     off_t next_offset = 0;
     int ret;
     double end;
     int i;
-    char fbr_name[128];
 
     arg.fd = open(filename, O_WRONLY|O_CREAT|O_DIRECT|O_SYNC, S_IWUSR|S_IRUSR);
     if(!arg.fd)
@@ -133,51 +133,65 @@ static void abt_bench(unsigned int concurrency, size_t size, double duration,
         assert(0);
     }
 
-    id_array = malloc(concurrency * sizeof(*id_array));
-    assert(id_array);
+    tid_array = malloc(concurrency * sizeof(*tid_array));
+    assert(tid_array);
 
+#if 0
     fbr_init(&context, EV_DEFAULT);
     fbr_eio_init();
     eio_set_min_parallel(concurrency);
+#endif
 
-    fbr_mutex_init(&context, &mutex);
+    ABT_mutex_create(&mutex);
 
     arg.mutex = &mutex;
     arg.size = size;
     arg.next_offset = &next_offset;
     arg.duration = duration;
 
+    arg.start_time = wtime();
+
     for(i=0; i<concurrency; i++)
     {
+        /* create ULTs */
+        #if 0
         sprintf(fbr_name, "write_fbr_%d", i);
         id_array[i] = fbr_create(&context, fbr_name, write_fbr_bench, &arg, 0);
         assert(!fbr_id_isnull(id_array[i]));
+        #endif
     }
 
     arg.start_time = wtime();
 
     for(i=0; i<concurrency; i++)
     {
-        ret = fbr_transfer(&context, id_array[i]);
-        assert(ret == 0);
+        /* join ULTs */
+        #if 0
+        something
+        #endif
     }
 
-    ev_run(EV_DEFAULT, 0);
-
     end = wtime();
-    
+ 
+    for(i=0; i<concurrency; i++)
+    {
+        /* free ULTs */
+        #if 0
+        something
+        #endif
+    }
+
+   
     *seconds = end-arg.start_time;
     *ops_done = next_offset/size;
 
-    fbr_mutex_destroy(&context, &mutex);
-    fbr_destroy(&context);
-    free(id_array);
+    ABT_mutex_free(&mutex);
+    free(tid_array);
 
     close(arg.fd);
     unlink(filename);
 
     return;
-#endif
 }
 
 static void pthread_bench(unsigned int concurrency, size_t size, double duration,
