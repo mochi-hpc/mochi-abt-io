@@ -127,8 +127,11 @@ static void abt_bench(int argc, char **argv, unsigned int concurrency, size_t si
     int ret;
     double end;
     int i;
-    ABT_xstream progress_xstream;
+    ABT_xstream *progress_xstreams;
     ABT_pool progress_pool;
+    ABT_xstream xstream;
+    ABT_pool pool;
+    abt_io_instance_id aid;
 
     arg.fd = open(filename, O_WRONLY|O_CREAT|O_DIRECT|O_SYNC, S_IWUSR|S_IRUSR);
     if(!arg.fd)
@@ -140,6 +143,9 @@ static void abt_bench(int argc, char **argv, unsigned int concurrency, size_t si
     tid_array = malloc(concurrency * sizeof(*tid_array));
     assert(tid_array);
 
+    progress_xstreams = malloc(concurrency * sizeof(*progress_xstreams));
+    assert(progress_xstreams);
+
     /* set up argobots */
     ret = ABT_init(argc, argv);
     assert(ret == 0);
@@ -148,18 +154,23 @@ static void abt_bench(int argc, char **argv, unsigned int concurrency, size_t si
     ret = ABT_snoozer_xstream_self_set();
     assert(ret == 0);
 
-    /* TODO: more ES's */
     /* create a dedicated ES drive Mercury progress */
-    ret = ABT_snoozer_xstream_create(1, &progress_pool, &progress_xstream);
+    /* NOTE: for now we are going to use the same number of execution streams
+     * in the io pool as the desired level of issue concurrency, but this
+     * doesn't need to be the case in general.
+     */
+    ret = ABT_snoozer_xstream_create(concurrency, &progress_pool, progress_xstreams);
     assert(ret == 0);
 
-    /* TODO: initialize abt_io */
+    /* retrieve current pool to use for ULT concurrency */
+    ret = ABT_xstream_self(&xstream);
+    assert(ret == 0);
+    ret = ABT_xstream_get_main_pools(xstream, 1, &pool);
+    assert(ret == 0);
 
-#if 0
-    fbr_init(&context, EV_DEFAULT);
-    fbr_eio_init();
-    eio_set_min_parallel(concurrency);
-#endif
+    /* initialize abt_io */
+    aid = abt_io_init(progress_pool);
+    assert(aid != NULL);
 
     ABT_mutex_create(&mutex);
 
@@ -167,45 +178,44 @@ static void abt_bench(int argc, char **argv, unsigned int concurrency, size_t si
     arg.size = size;
     arg.next_offset = &next_offset;
     arg.duration = duration;
+    arg.aid = aid;
 
     arg.start_time = wtime();
 
     for(i=0; i<concurrency; i++)
     {
         /* create ULTs */
-        #if 0
-        sprintf(fbr_name, "write_fbr_%d", i);
-        id_array[i] = fbr_create(&context, fbr_name, write_fbr_bench, &arg, 0);
-        assert(!fbr_id_isnull(id_array[i]));
-        #endif
+        ret = ABT_thread_create(pool, write_abt_bench, &arg, ABT_THREAD_ATTR_NULL, &tid_array[i]);
+        assert(ret == 0);
     }
 
     arg.start_time = wtime();
 
     for(i=0; i<concurrency; i++)
-    {
-        /* join ULTs */
-        #if 0
-        something
-        #endif
-    }
+        ABT_thread_join(tid_array[i]);
 
     end = wtime();
  
     for(i=0; i<concurrency; i++)
-    {
-        /* free ULTs */
-        #if 0
-        something
-        #endif
-    }
-
+        ABT_thread_free(&tid_array[i]);
    
     *seconds = end-arg.start_time;
     *ops_done = next_offset/size;
 
+    abt_io_finalize(aid);
+
+    /* wait on the ESs to complete */
+    for(i=0; i<4; i++)
+    {
+        ABT_xstream_join(progress_xstreams[i]);
+        ABT_xstream_free(&progress_xstreams[i]);
+    }
+
+    ABT_finalize();
+
     ABT_mutex_free(&mutex);
     free(tid_array);
+    free(progress_xstreams);
 
     close(arg.fd);
     unlink(filename);
