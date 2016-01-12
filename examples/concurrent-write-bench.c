@@ -13,6 +13,7 @@
 
 #include <abt.h>
 #include <abt-io.h>
+#include <abt-snoozer.h>
 
 /* This is a simple benchmark that measures the
  * streaming, concurrent, sequentially-issued write throughput for a 
@@ -35,7 +36,7 @@ struct write_abt_arg
 };
 
 static void write_abt_bench(void *_arg);
-static void abt_bench(unsigned int concurrency, size_t size, 
+static void abt_bench(int argc, char **argv, unsigned int concurrency, size_t size, 
     double duration, const char* filename, unsigned int* ops_done, double *seconds);
 
 /* pthread data types and fn prototypes */
@@ -94,7 +95,7 @@ int main(int argc, char **argv)
 
     /* run benchmarks */
     printf("# Running ABT benchmark...\n");
-    abt_bench(concurrency, size, duration, argv[4], &abt_ops_done, &abt_seconds);
+    abt_bench(argc, argv, concurrency, size, duration, argv[4], &abt_ops_done, &abt_seconds);
     printf("# ...abt benchmark done.\n");
 
     sleep(1);
@@ -116,7 +117,7 @@ int main(int argc, char **argv)
     return(0);
 }
 
-static void abt_bench(unsigned int concurrency, size_t size, double duration,
+static void abt_bench(int argc, char **argv, unsigned int concurrency, size_t size, double duration,
     const char *filename, unsigned int* ops_done, double *seconds)
 {
     ABT_thread *tid_array = NULL;
@@ -126,6 +127,8 @@ static void abt_bench(unsigned int concurrency, size_t size, double duration,
     int ret;
     double end;
     int i;
+    ABT_xstream progress_xstream;
+    ABT_pool progress_pool;
 
     arg.fd = open(filename, O_WRONLY|O_CREAT|O_DIRECT|O_SYNC, S_IWUSR|S_IRUSR);
     if(!arg.fd)
@@ -136,6 +139,21 @@ static void abt_bench(unsigned int concurrency, size_t size, double duration,
 
     tid_array = malloc(concurrency * sizeof(*tid_array));
     assert(tid_array);
+
+    /* set up argobots */
+    ret = ABT_init(argc, argv);
+    assert(ret == 0);
+
+    /* set primary ES to idle without polling */
+    ret = ABT_snoozer_xstream_self_set();
+    assert(ret == 0);
+
+    /* TODO: more ES's */
+    /* create a dedicated ES drive Mercury progress */
+    ret = ABT_snoozer_xstream_create(1, &progress_pool, &progress_xstream);
+    assert(ret == 0);
+
+    /* TODO: initialize abt_io */
 
 #if 0
     fbr_init(&context, EV_DEFAULT);
