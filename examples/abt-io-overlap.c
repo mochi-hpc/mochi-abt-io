@@ -246,8 +246,8 @@ static void worker_ult(void *_arg)
 
     ABT_mutex_lock(arg->mutex);
     arg->inflight--;
-    ABT_cond_signal(arg->cond);
     ABT_mutex_unlock(arg->mutex);
+    ABT_cond_signal(arg->cond);
 
     return;
 }
