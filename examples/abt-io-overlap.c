@@ -114,7 +114,10 @@ static void worker_ult(void *_arg)
     void *buffer;
     size_t ret;
     int size = 1024*1024*4;
+    char template[256];
+    int fd;
 
+    fprintf(stderr, "start\n");
     ret = posix_memalign(&buffer, 4096, size);
     assert(ret == 0);
     memset(buffer, 0, size);
@@ -122,23 +125,24 @@ static void worker_ult(void *_arg)
     ret = RAND_bytes(buffer, size);
     assert(ret == 1);
 
-#if 0
-    double now = wtime();
-    while((now-arg->start_time) < arg->duration) 
-    {
-        ABT_mutex_lock(*arg->mutex);
-        my_offset = *arg->next_offset;
-        (*arg->next_offset) += arg->size;
-        ABT_mutex_unlock(*arg->mutex);
+    sprintf(template, "./XXXXXX");
 
+    fd = mkostemp(template, O_DIRECT|O_SYNC);
+    assert(fd >= 0);
+
+    ret = pwrite(fd, buffer, size, 0);
+    assert(ret == size);
+
+    ret = unlink(template);
+    assert(ret == 0);
+
+#if 0
         ret = abt_io_pwrite(arg->aid, arg->fd, buffer, arg->size, my_offset);
         assert(ret == arg->size);
-
-        now = wtime();
-    }
 #endif
 
     free(buffer);
+    fprintf(stderr, "end\n");
 
     return;
 }
