@@ -21,6 +21,7 @@
 
 struct worker_ult_arg
 {
+    int opt_io;
     int opt_abt_io;
     int opt_abt_snoozer;
     int opt_unit_size;
@@ -50,24 +51,26 @@ int main(int argc, char **argv)
     int compute_es_count = -1;
     struct worker_ult_arg arg;
 
-    if(argc != 7)
+    if(argc != 8)
     {
-        fprintf(stderr, "Usage: abt-io-overlap <abt_io 0|1> <abt_snoozer 0|1> <unit_size> <num_units> <compute_es_count> <io_es_count>\n");
+        fprintf(stderr, "Usage: abt-io-overlap <io> <abt_io 0|1> <abt_snoozer 0|1> <unit_size> <num_units> <compute_es_count> <io_es_count>\n");
         return(-1);
     }
 
-    ret = sscanf(argv[1], "%d", &arg.opt_abt_io);
+    ret = sscanf(argv[1], "%d", &arg.opt_io);
     assert(ret == 1);
-    ret = sscanf(argv[2], "%d", &arg.opt_abt_snoozer);
+    ret = sscanf(argv[2], "%d", &arg.opt_abt_io);
     assert(ret == 1);
-    ret = sscanf(argv[3], "%d", &arg.opt_unit_size);
+    ret = sscanf(argv[3], "%d", &arg.opt_abt_snoozer);
+    assert(ret == 1);
+    ret = sscanf(argv[4], "%d", &arg.opt_unit_size);
     assert(ret == 1);
     assert(arg.opt_unit_size % 4096 == 0);
-    ret = sscanf(argv[4], "%d", &arg.opt_num_units);
+    ret = sscanf(argv[5], "%d", &arg.opt_num_units);
     assert(ret == 1);
-    ret = sscanf(argv[5], "%d", &compute_es_count);
+    ret = sscanf(argv[6], "%d", &compute_es_count);
     assert(ret == 1);
-    ret = sscanf(argv[6], "%d", &io_es_count);
+    ret = sscanf(argv[7], "%d", &io_es_count);
     assert(ret == 1);
 
     tid_array = malloc(arg.opt_num_units * sizeof(*tid_array));
@@ -170,8 +173,8 @@ int main(int argc, char **argv)
     free(io_xstreams);
     free(compute_xstreams);
 
-    printf("#<opt_abt_io>\t<opt_abt_snoozer>\t<opt_unit_size>\t<opt_num_units>\t<opt_compute_es_count>\t<opt_io_es_count>\t<time (s)>\t<bytes/s>\t<ops/s>\n");
-    printf("%d\t%d\t%d\t%d\t%d\t%d\t%f\t%f\t%f\n", arg.opt_abt_io, arg.opt_abt_snoozer,
+    printf("#<opt_io>\t<opt_abt_io>\t<opt_abt_snoozer>\t<opt_unit_size>\t<opt_num_units>\t<opt_compute_es_count>\t<opt_io_es_count>\t<time (s)>\t<bytes/s>\t<ops/s>\n");
+    printf("%d\t%d\t%d\t%d\t%d\t%d\t%d\t%f\t%f\t%f\n", arg.opt_io, arg.opt_abt_io, arg.opt_abt_snoozer,
         arg.opt_unit_size, arg.opt_num_units, compute_es_count, io_es_count, seconds, ((double)arg.opt_unit_size* (double)arg.opt_num_units)/seconds, (double)arg.opt_num_units/seconds);
 
     return(0);
