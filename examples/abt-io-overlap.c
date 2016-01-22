@@ -151,6 +151,10 @@ int main(int argc, char **argv)
     free(io_xstreams);
     free(compute_xstreams);
 
+    printf("#<opt_abt_io>\t<opt_abt_snoozer>\t<opt_unit_size>\t<opt_num_units>\t<time (s)>\t<bytes/s>\t<ops/s>\n");
+    printf("%d\t%d\t%d\t%d\t%f\t%f\t%f\n", arg.opt_abt_io, arg.opt_abt_snoozer,
+        arg.opt_unit_size, arg.opt_num_units, seconds, ((double)arg.opt_unit_size* (double)arg.opt_num_units)/seconds, (double)arg.opt_num_units/seconds);
+
     return(0);
 }
 
@@ -162,7 +166,7 @@ static void worker_ult(void *_arg)
     char template[256];
     int fd;
 
-    fprintf(stderr, "start\n");
+    //fprintf(stderr, "start\n");
     ret = posix_memalign(&buffer, 4096, arg->opt_unit_size);
     assert(ret == 0);
     memset(buffer, 0, arg->opt_unit_size);
@@ -194,7 +198,7 @@ static void worker_ult(void *_arg)
     }
 
     free(buffer);
-    fprintf(stderr, "end\n");
+    //fprintf(stderr, "end\n");
 
     return;
 }
