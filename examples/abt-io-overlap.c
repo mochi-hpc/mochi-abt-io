@@ -19,11 +19,6 @@
 
 #define INFLIGHT_LIMIT 64
 
-/* TODO: 
- * - configurable pool size for io
- * - configurable pool size for compute
- */
-
 struct worker_ult_arg
 {
     int opt_abt_io;
@@ -51,13 +46,13 @@ int main(int argc, char **argv)
     ABT_pool io_pool;
     ABT_xstream *compute_xstreams;
     ABT_pool compute_pool;
-    int io_es_count = 4;
-    int compute_es_count = 16;
+    int io_es_count = -1;
+    int compute_es_count = -1;
     struct worker_ult_arg arg;
 
-    if(argc != 5)
+    if(argc != 7)
     {
-        fprintf(stderr, "Usage: abt-io-overlap <abt_io 0|1> <abt_snoozer 0|1> <unit_size> <num_units>\n");
+        fprintf(stderr, "Usage: abt-io-overlap <abt_io 0|1> <abt_snoozer 0|1> <unit_size> <num_units> <compute_es_count> <io_es_count>\n");
         return(-1);
     }
 
@@ -69,6 +64,10 @@ int main(int argc, char **argv)
     assert(ret == 1);
     assert(arg.opt_unit_size % 4096 == 0);
     ret = sscanf(argv[4], "%d", &arg.opt_num_units);
+    assert(ret == 1);
+    ret = sscanf(argv[5], "%d", &compute_es_count);
+    assert(ret == 1);
+    ret = sscanf(argv[6], "%d", &io_es_count);
     assert(ret == 1);
 
     tid_array = malloc(arg.opt_num_units * sizeof(*tid_array));
@@ -171,9 +170,9 @@ int main(int argc, char **argv)
     free(io_xstreams);
     free(compute_xstreams);
 
-    printf("#<opt_abt_io>\t<opt_abt_snoozer>\t<opt_unit_size>\t<opt_num_units>\t<time (s)>\t<bytes/s>\t<ops/s>\n");
-    printf("%d\t%d\t%d\t%d\t%f\t%f\t%f\n", arg.opt_abt_io, arg.opt_abt_snoozer,
-        arg.opt_unit_size, arg.opt_num_units, seconds, ((double)arg.opt_unit_size* (double)arg.opt_num_units)/seconds, (double)arg.opt_num_units/seconds);
+    printf("#<opt_abt_io>\t<opt_abt_snoozer>\t<opt_unit_size>\t<opt_num_units>\t<opt_compute_es_count>\t<opt_io_es_count>\t<time (s)>\t<bytes/s>\t<ops/s>\n");
+    printf("%d\t%d\t%d\t%d\t%d\t%d\t%f\t%f\t%f\n", arg.opt_abt_io, arg.opt_abt_snoozer,
+        arg.opt_unit_size, arg.opt_num_units, compute_es_count, io_es_count, seconds, ((double)arg.opt_unit_size* (double)arg.opt_num_units)/seconds, (double)arg.opt_num_units/seconds);
 
     return(0);
 }
