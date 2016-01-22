@@ -206,42 +206,45 @@ static void worker_ult(void *_arg)
 
     sprintf(template, "./data-XXXXXX");
 
-    if(arg->opt_abt_io)
+    if(arg->opt_io)
     {
-        fd = abt_io_mkostemp(arg->aid, template, O_DIRECT|O_SYNC);
-        if(fd < 0)
+        if(arg->opt_abt_io)
         {
-            fprintf(stderr, "abt_io_mkostemp: %d\n", fd);
+            fd = abt_io_mkostemp(arg->aid, template, O_DIRECT|O_SYNC);
+            if(fd < 0)
+            {
+                fprintf(stderr, "abt_io_mkostemp: %d\n", fd);
+            }
+            assert(fd >= 0);
+
+            ret = abt_io_pwrite(arg->aid, fd, buffer, arg->opt_unit_size, 0);
+            assert(ret == arg->opt_unit_size);
+
+            ret = abt_io_close(arg->aid, fd);
+            assert(ret == 0);
+
+            ret = abt_io_unlink(arg->aid, template);
+            assert(ret == 0);
         }
-        assert(fd >= 0);
-
-        ret = abt_io_pwrite(arg->aid, fd, buffer, arg->opt_unit_size, 0);
-        assert(ret == arg->opt_unit_size);
-
-        ret = abt_io_close(arg->aid, fd);
-        assert(ret == 0);
-
-        ret = abt_io_unlink(arg->aid, template);
-        assert(ret == 0);
-    }
-    else
-    {
-        fd = mkostemp(template, O_DIRECT|O_SYNC);
-        if(fd < 0)
+        else
         {
-            perror("mkostemp");
-            fprintf(stderr, "errno: %d\n", errno);
+            fd = mkostemp(template, O_DIRECT|O_SYNC);
+            if(fd < 0)
+            {
+                perror("mkostemp");
+                fprintf(stderr, "errno: %d\n", errno);
+            }
+            assert(fd >= 0);
+
+            ret = pwrite(fd, buffer, arg->opt_unit_size, 0);
+            assert(ret == arg->opt_unit_size);
+
+            ret = close(fd);
+            assert(ret == 0);
+
+            ret = unlink(template);
+            assert(ret == 0);
         }
-        assert(fd >= 0);
-
-        ret = pwrite(fd, buffer, arg->opt_unit_size, 0);
-        assert(ret == arg->opt_unit_size);
-
-        ret = close(fd);
-        assert(ret == 0);
-
-        ret = unlink(template);
-        assert(ret == 0);
     }
 
     free(buffer);
