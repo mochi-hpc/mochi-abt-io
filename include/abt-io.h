@@ -13,6 +13,7 @@ extern "C" {
 
 #include <abt.h>
 #include <sys/types.h>
+#include <stdlib.h>
 
 struct abt_io_instance;
 typedef struct abt_io_instance* abt_io_instance_id;
@@ -42,6 +43,16 @@ int abt_io_open(abt_io_instance_id aid, const char* pathname, int flags, mode_t 
  */
 ssize_t abt_io_pwrite(abt_io_instance_id aid, int fd, const void *buf, size_t count,
     off_t offset);
+
+/**
+ * wrapper for mkostemp()
+ */
+int abt_io_mkostemp(abt_io_instance_id aid, char *template, int flags);
+
+/** 
+ * wrapper for unlink()
+ */
+int abt_io_unlink(abt_io_instance_id aid, const char *pathname);
 
 #ifdef __cplusplus
 }

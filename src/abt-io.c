@@ -5,6 +5,8 @@
  * See COPYRIGHT in top-level directory.
  */
 
+#define _GNU_SOURCE
+
 #include <assert.h>
 #include <unistd.h>
 #include <errno.h>
@@ -134,3 +136,85 @@ ssize_t abt_io_pwrite(abt_io_instance_id aid, int fd, const void *buf,
 
     return(state.ret);
 }
+
+struct abt_io_mkostemp_state
+{
+    int ret;
+    char *template;
+    int flags;
+};
+
+static void abt_io_mkostemp_fn(void *foo)
+{
+    struct abt_io_mkostemp_state *state = foo;
+
+    state->ret = mkostemp(state->template, state->flags);
+    if(state->ret < 0)
+        state->ret = -errno;
+
+    return;
+}
+
+int abt_io_mkostemp(abt_io_instance_id aid, char *template, int flags)
+{
+    struct abt_io_mkostemp_state state;
+    int ret;
+    ABT_thread tid;
+
+    state.ret = -ENOSYS;
+    state.template = template;
+    state.flags = flags;
+
+    ret = ABT_thread_create(aid->progress_pool, abt_io_mkostemp_fn, &state,
+        ABT_THREAD_ATTR_NULL, &tid);
+    if(ret != 0)
+    {
+        return(-EINVAL);
+    }
+
+    ABT_thread_join(tid);
+    ABT_thread_free(&tid);
+
+    return(state.ret);
+}
+
+struct abt_io_unlink_state
+{
+    int ret;
+    const char *pathname;
+};
+
+static void abt_io_unlink_fn(void *foo)
+{
+    struct abt_io_unlink_state *state = foo;
+
+    state->ret = unlink(state->pathname);
+    if(state->ret < 0)
+        state->ret = -errno;
+
+    return;
+}
+
+int abt_io_unlink(abt_io_instance_id aid, const char *pathname)
+{
+    struct abt_io_unlink_state state;
+    int ret;
+    ABT_thread tid;
+
+    state.ret = -ENOSYS;
+    state.pathname = pathname;
+
+    ret = ABT_thread_create(aid->progress_pool, abt_io_unlink_fn, &state,
+        ABT_THREAD_ATTR_NULL, &tid);
+    if(ret != 0)
+    {
+        return(-EINVAL);
+    }
+
+    ABT_thread_join(tid);
+    ABT_thread_free(&tid);
+
+    return(state.ret);
+}
+
+

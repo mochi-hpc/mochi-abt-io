@@ -99,7 +99,8 @@ int main(int argc, char **argv)
         }
         else
         {
-            assert(0);
+            ret = ABT_nosnoozer_xstream_create(io_es_count, &io_pool, io_xstreams);
+            assert(ret == 0);
         }
 
         /* initialize abt_io */
@@ -179,12 +180,14 @@ static void worker_ult(void *_arg)
 
     if(arg->opt_abt_io)
     {
-#if 0
-        ret = abt_io_pwrite(arg->aid, arg->fd, buffer, arg->size, my_offset);
-        assert(ret == arg->size);
-#endif
+        fd = abt_io_mkostemp(arg->aid, template, O_DIRECT|O_SYNC);
+        assert(fd >= 0);
 
-        assert(0);
+        ret = abt_io_pwrite(arg->aid, fd, buffer, arg->opt_unit_size, 0);
+        assert(ret == arg->opt_unit_size);
+
+        ret = abt_io_unlink(arg->aid, template);
+        assert(ret == 0);
     }
     else
     {
