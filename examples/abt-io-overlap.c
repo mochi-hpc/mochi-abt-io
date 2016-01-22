@@ -30,6 +30,8 @@ struct worker_ult_arg
     ABT_cond cond;
     ABT_mutex mutex;
     int inflight;
+    int completed;
+    ABT_eventual eventual;
 };
 
 static void worker_ult(void *_arg);
@@ -40,7 +42,6 @@ int main(int argc, char **argv)
 {
     int ret;
     double seconds;
-    ABT_thread *tid_array = NULL;
     double end, start;
     int i;
     ABT_xstream *io_xstreams;
@@ -50,6 +51,7 @@ int main(int argc, char **argv)
     int io_es_count = -1;
     int compute_es_count = -1;
     struct worker_ult_arg arg;
+    int *done;
 
     if(argc != 8)
     {
@@ -72,9 +74,6 @@ int main(int argc, char **argv)
     assert(ret == 1);
     ret = sscanf(argv[7], "%d", &io_es_count);
     assert(ret == 1);
-
-    tid_array = malloc(arg.opt_num_units * sizeof(*tid_array));
-    assert(tid_array);
 
     io_xstreams = malloc(io_es_count * sizeof(*io_xstreams));
     assert(io_xstreams);
@@ -123,6 +122,7 @@ int main(int argc, char **argv)
 
     ABT_cond_create(&arg.cond);
     ABT_mutex_create(&arg.mutex);
+    ABT_eventual_create(sizeof(*done), &arg.eventual);
     arg.inflight = 0;
 
     start = wtime();
@@ -130,17 +130,13 @@ int main(int argc, char **argv)
     for(i=0; i<arg.opt_num_units; i++)
     {
         /* create ULTs */
-        ret = ABT_thread_create(compute_pool, worker_ult, &arg, ABT_THREAD_ATTR_NULL, &tid_array[i]);
+        ret = ABT_thread_create(compute_pool, worker_ult, &arg, ABT_THREAD_ATTR_NULL, NULL);
         assert(ret == 0);
     }
 
-    for(i=0; i<arg.opt_num_units; i++)
-        ABT_thread_join(tid_array[i]);
+    ABT_eventual_wait(arg.eventual, (void**)&done);
 
     end = wtime();
- 
-    for(i=0; i<arg.opt_num_units; i++)
-        ABT_thread_free(&tid_array[i]);
    
     seconds = end-start;
 
@@ -169,7 +165,6 @@ int main(int argc, char **argv)
 
     ABT_finalize();
 
-    free(tid_array);
     free(io_xstreams);
     free(compute_xstreams);
 
@@ -187,6 +182,7 @@ static void worker_ult(void *_arg)
     size_t ret;
     char template[256];
     int fd;
+    int done = 0;
 
     ABT_mutex_lock(arg->mutex);
     while(arg->inflight >= INFLIGHT_LIMIT) 
@@ -252,8 +248,12 @@ static void worker_ult(void *_arg)
 
     ABT_mutex_lock(arg->mutex);
     arg->inflight--;
-    ABT_mutex_unlock(arg->mutex);
     ABT_cond_signal(arg->cond);
+    arg->completed++;
+    ABT_mutex_unlock(arg->mutex);
+
+    if(arg->completed == arg->opt_num_units)
+        ABT_eventual_set(arg->eventual, &done, sizeof(done));
 
     return;
 }
