@@ -27,6 +27,7 @@ struct worker_ult_arg
 
 static void worker_ult(void *_arg);
 static double wtime(void);
+static int ABT_nosnoozer_xstream_create(int num_xstreams, ABT_pool *newpool, ABT_xstream *newxstreams);
 
 int main(int argc, char **argv) 
 {
@@ -78,14 +79,14 @@ int main(int argc, char **argv)
         ret = ABT_snoozer_xstream_self_set();
         assert(ret == 0);
 
-
-        /* create dedicated pool for computatcomputen */
+        /* create dedicated pool for computation */
         ret = ABT_snoozer_xstream_create(compute_es_count, &compute_pool, compute_xstreams);
         assert(ret == 0);
     }
     else
     {
-        assert(0);
+        ret = ABT_nosnoozer_xstream_create(compute_es_count, &compute_pool, compute_xstreams);
+        assert(ret == 0);
     }
 
     if(arg.opt_abt_io)
@@ -209,3 +210,33 @@ static double wtime(void)
     gettimeofday(&t, NULL);
     return((double)t.tv_sec + (double)t.tv_usec / 1000000.0);
 }
+
+static int ABT_nosnoozer_xstream_create(int num_xstreams, ABT_pool *newpool, ABT_xstream *newxstreams)
+{
+    ABT_sched *scheds;
+    int i;
+
+    scheds = malloc(num_xstreams * sizeof(*scheds));
+    if(!scheds)
+        return(-1);
+
+    /* Create a shared pool */
+    ABT_pool_create_basic(ABT_POOL_FIFO, ABT_POOL_ACCESS_MPMC,
+        ABT_TRUE, newpool);
+
+    /* create schedulers */
+    for (i = 0; i < num_xstreams; i++) {
+        ABT_sched_create_basic(ABT_SCHED_DEFAULT, 1, newpool,
+            ABT_SCHED_CONFIG_NULL, &scheds[i]);
+    }
+    
+    /* create ESs */
+    for (i = 0; i < num_xstreams; i++) {
+        ABT_xstream_create(scheds[i], &newxstreams[i]);
+    }
+
+    free(scheds);
+
+    return(0);
+}
+
