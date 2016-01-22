@@ -16,6 +16,15 @@
 #include <abt-io.h>
 #include <abt-snoozer.h>
 
+struct worker_ult_arg
+{
+    int opt_abt_io;
+    int opt_abt_snoozer;
+    int opt_unit_size;
+    int opt_num_units;
+    abt_io_instance_id aid;
+};
+
 static void worker_ult(void *_arg);
 static double wtime(void);
 
@@ -30,12 +39,27 @@ int main(int argc, char **argv)
     ABT_pool io_pool;
     ABT_xstream *compute_xstreams;
     ABT_pool compute_pool;
-    abt_io_instance_id aid;
     int io_es_count = 4;
     int compute_es_count = 16;
-    int target_ops = 100;
+    struct worker_ult_arg arg;
 
-    tid_array = malloc(target_ops * sizeof(*tid_array));
+    if(argc != 5)
+    {
+        fprintf(stderr, "Usage: abt-io-overlap <abt_io 0|1> <abt_snoozer 0|1> <unit_size> <num_units>\n");
+        return(-1);
+    }
+
+    ret = sscanf(argv[1], "%d", &arg.opt_abt_io);
+    assert(ret == 1);
+    ret = sscanf(argv[2], "%d", &arg.opt_abt_snoozer);
+    assert(ret == 1);
+    ret = sscanf(argv[3], "%d", &arg.opt_unit_size);
+    assert(ret == 1);
+    assert(arg.opt_unit_size % 4096 == 0);
+    ret = sscanf(argv[4], "%d", &arg.opt_num_units);
+    assert(ret == 1);
+
+    tid_array = malloc(arg.opt_num_units * sizeof(*tid_array));
     assert(tid_array);
 
     io_xstreams = malloc(io_es_count * sizeof(*io_xstreams));
@@ -48,55 +72,77 @@ int main(int argc, char **argv)
     ret = ABT_init(argc, argv);
     assert(ret == 0);
 
-    /* set primary ES to idle without polling */
-    ret = ABT_snoozer_xstream_self_set();
-    assert(ret == 0);
+    if(arg.opt_abt_snoozer)
+    {
+        /* set primary ES to idle without polling */
+        ret = ABT_snoozer_xstream_self_set();
+        assert(ret == 0);
 
-    /* create dedicated pool drive IO */
-    ret = ABT_snoozer_xstream_create(io_es_count, &io_pool, io_xstreams);
-    assert(ret == 0);
 
-    /* create dedicated pool for computatcomputen */
-    ret = ABT_snoozer_xstream_create(compute_es_count, &compute_pool, compute_xstreams);
-    assert(ret == 0);
+        /* create dedicated pool for computatcomputen */
+        ret = ABT_snoozer_xstream_create(compute_es_count, &compute_pool, compute_xstreams);
+        assert(ret == 0);
+    }
+    else
+    {
+        assert(0);
+    }
 
-    /* initialize abt_io */
-    aid = abt_io_init(io_pool);
-    assert(aid != NULL);
+    if(arg.opt_abt_io)
+    {
+        if(arg.opt_abt_snoozer)
+        {
+            /* create dedicated pool drive IO */
+            ret = ABT_snoozer_xstream_create(io_es_count, &io_pool, io_xstreams);
+            assert(ret == 0);
+        }
+        else
+        {
+            assert(0);
+        }
+
+        /* initialize abt_io */
+        arg.aid = abt_io_init(io_pool);
+        assert(arg.aid != NULL);
+    }
 
     start = wtime();
 
-    for(i=0; i<target_ops; i++)
+    for(i=0; i<arg.opt_num_units; i++)
     {
         /* create ULTs */
-        ret = ABT_thread_create(compute_pool, worker_ult, NULL, ABT_THREAD_ATTR_NULL, &tid_array[i]);
+        ret = ABT_thread_create(compute_pool, worker_ult, &arg, ABT_THREAD_ATTR_NULL, &tid_array[i]);
         assert(ret == 0);
     }
 
-    for(i=0; i<target_ops; i++)
+    for(i=0; i<arg.opt_num_units; i++)
         ABT_thread_join(tid_array[i]);
 
     end = wtime();
  
-    for(i=0; i<target_ops; i++)
+    for(i=0; i<arg.opt_num_units; i++)
         ABT_thread_free(&tid_array[i]);
    
     seconds = end-start;
 
-    abt_io_finalize(aid);
-
-    /* wait on the ESs to complete */
-    for(i=0; i<io_es_count; i++)
-    {
-        ABT_xstream_join(io_xstreams[i]);
-        ABT_xstream_free(&io_xstreams[i]);
-    }
-
-    /* wait on the ESs to complete */
+    /* wait on the compute ESs to complete */
     for(i=0; i<compute_es_count; i++)
     {
         ABT_xstream_join(compute_xstreams[i]);
         ABT_xstream_free(&compute_xstreams[i]);
+    }
+
+    if(arg.opt_abt_io)
+    {
+        abt_io_finalize(arg.aid);
+
+        /* wait on IO ESs to complete */
+        for(i=0; i<io_es_count; i++)
+        {
+            ABT_xstream_join(io_xstreams[i]);
+            ABT_xstream_free(&io_xstreams[i]);
+        }
+
     }
 
     ABT_finalize();
@@ -110,36 +156,42 @@ int main(int argc, char **argv)
 
 static void worker_ult(void *_arg)
 {
-    struct write_abt_arg* arg = _arg;
+    struct worker_ult_arg* arg = _arg;
     void *buffer;
     size_t ret;
-    int size = 1024*1024*4;
     char template[256];
     int fd;
 
     fprintf(stderr, "start\n");
-    ret = posix_memalign(&buffer, 4096, size);
+    ret = posix_memalign(&buffer, 4096, arg->opt_unit_size);
     assert(ret == 0);
-    memset(buffer, 0, size);
+    memset(buffer, 0, arg->opt_unit_size);
 
-    ret = RAND_bytes(buffer, size);
+    ret = RAND_bytes(buffer, arg->opt_unit_size);
     assert(ret == 1);
 
     sprintf(template, "./XXXXXX");
 
-    fd = mkostemp(template, O_DIRECT|O_SYNC);
-    assert(fd >= 0);
-
-    ret = pwrite(fd, buffer, size, 0);
-    assert(ret == size);
-
-    ret = unlink(template);
-    assert(ret == 0);
-
+    if(arg->opt_abt_io)
+    {
 #if 0
         ret = abt_io_pwrite(arg->aid, arg->fd, buffer, arg->size, my_offset);
         assert(ret == arg->size);
 #endif
+
+        assert(0);
+    }
+    else
+    {
+        fd = mkostemp(template, O_DIRECT|O_SYNC);
+        assert(fd >= 0);
+
+        ret = pwrite(fd, buffer, arg->opt_unit_size, 0);
+        assert(ret == arg->opt_unit_size);
+
+        ret = unlink(template);
+        assert(ret == 0);
+    }
 
     free(buffer);
     fprintf(stderr, "end\n");
