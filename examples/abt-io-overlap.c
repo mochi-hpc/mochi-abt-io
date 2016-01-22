@@ -17,10 +17,9 @@
 #include <abt-io.h>
 #include <abt-snoozer.h>
 
+#define INFLIGHT_LIMIT 64
+
 /* TODO: 
- * - add condition variable (or some other construct) to worker_ult to
- *   throttle the number of ults that can get in flight at once
- *   - prevent many threads from getting to open step before close step
  * - configurable pool size for io
  * - configurable pool size for compute
  */
@@ -32,6 +31,9 @@ struct worker_ult_arg
     int opt_unit_size;
     int opt_num_units;
     abt_io_instance_id aid;
+    ABT_cond cond;
+    ABT_mutex mutex;
+    int inflight;
 };
 
 static void worker_ult(void *_arg);
@@ -117,6 +119,10 @@ int main(int argc, char **argv)
         assert(arg.aid != NULL);
     }
 
+    ABT_cond_create(&arg.cond);
+    ABT_mutex_create(&arg.mutex);
+    arg.inflight = 0;
+
     start = wtime();
 
     for(i=0; i<arg.opt_num_units; i++)
@@ -156,6 +162,9 @@ int main(int argc, char **argv)
 
     }
 
+    ABT_cond_free(&arg.cond);
+    ABT_mutex_free(&arg.mutex);
+
     ABT_finalize();
 
     free(tid_array);
@@ -177,7 +186,15 @@ static void worker_ult(void *_arg)
     char template[256];
     int fd;
 
-    fprintf(stderr, "start\n");
+    ABT_mutex_lock(arg->mutex);
+    while(arg->inflight >= INFLIGHT_LIMIT) 
+    {
+        ABT_cond_wait(arg->cond, arg->mutex);
+    }
+    arg->inflight++;
+    ABT_mutex_unlock(arg->mutex);
+
+    //fprintf(stderr, "start\n");
     ret = posix_memalign(&buffer, 4096, arg->opt_unit_size);
     assert(ret == 0);
     memset(buffer, 0, arg->opt_unit_size);
@@ -226,7 +243,12 @@ static void worker_ult(void *_arg)
     }
 
     free(buffer);
-    fprintf(stderr, "end\n");
+    //fprintf(stderr, "end\n");
+
+    ABT_mutex_lock(arg->mutex);
+    arg->inflight--;
+    ABT_cond_signal(arg->cond);
+    ABT_mutex_unlock(arg->mutex);
 
     return;
 }
