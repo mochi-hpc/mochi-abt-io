@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <openssl/rand.h>
+#include <errno.h>
 
 #include <abt.h>
 #include <abt-io.h>
@@ -176,15 +177,22 @@ static void worker_ult(void *_arg)
     ret = RAND_bytes(buffer, arg->opt_unit_size);
     assert(ret == 1);
 
-    sprintf(template, "./XXXXXX");
+    sprintf(template, "./data-XXXXXX");
 
     if(arg->opt_abt_io)
     {
         fd = abt_io_mkostemp(arg->aid, template, O_DIRECT|O_SYNC);
+        if(fd < 0)
+        {
+            fprintf(stderr, "abt_io_mkostemp: %d\n", fd);
+        }
         assert(fd >= 0);
 
         ret = abt_io_pwrite(arg->aid, fd, buffer, arg->opt_unit_size, 0);
         assert(ret == arg->opt_unit_size);
+
+        ret = abt_io_close(arg->aid, fd);
+        assert(ret == 0);
 
         ret = abt_io_unlink(arg->aid, template);
         assert(ret == 0);
@@ -192,10 +200,18 @@ static void worker_ult(void *_arg)
     else
     {
         fd = mkostemp(template, O_DIRECT|O_SYNC);
+        if(fd < 0)
+        {
+            perror("mkostemp");
+            fprintf(stderr, "errno: %d\n", errno);
+        }
         assert(fd >= 0);
 
         ret = pwrite(fd, buffer, arg->opt_unit_size, 0);
         assert(ret == arg->opt_unit_size);
+
+        ret = close(fd);
+        assert(ret == 0);
 
         ret = unlink(template);
         assert(ret == 0);

@@ -217,4 +217,43 @@ int abt_io_unlink(abt_io_instance_id aid, const char *pathname)
     return(state.ret);
 }
 
+struct abt_io_close_state
+{
+    int ret;
+    int fd;
+};
+
+static void abt_io_close_fn(void *foo)
+{
+    struct abt_io_close_state *state = foo;
+
+    state->ret = close(state->fd);
+    if(state->ret < 0)
+        state->ret = -errno;
+
+    return;
+}
+
+int abt_io_close(abt_io_instance_id aid, int fd)
+{
+    struct abt_io_close_state state;
+    int ret;
+    ABT_thread tid;
+
+    state.ret = -ENOSYS;
+    state.fd = fd;
+
+    ret = ABT_thread_create(aid->progress_pool, abt_io_close_fn, &state,
+        ABT_THREAD_ATTR_NULL, &tid);
+    if(ret != 0)
+    {
+        return(-EINVAL);
+    }
+
+    ABT_thread_join(tid);
+    ABT_thread_free(&tid);
+
+    return(state.ret);
+
+}
 

@@ -54,6 +54,11 @@ int abt_io_mkostemp(abt_io_instance_id aid, char *template, int flags);
  */
 int abt_io_unlink(abt_io_instance_id aid, const char *pathname);
 
+/**
+ * wrapper for close()
+ */
+int abt_io_close(abt_io_instance_id aid, int fd);
+
 #ifdef __cplusplus
 }
 #endif
