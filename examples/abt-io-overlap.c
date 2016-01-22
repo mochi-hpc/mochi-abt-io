@@ -17,6 +17,14 @@
 #include <abt-io.h>
 #include <abt-snoozer.h>
 
+/* TODO: 
+ * - add condition variable (or some other construct) to worker_ult to
+ *   throttle the number of ults that can get in flight at once
+ *   - prevent many threads from getting to open step before close step
+ * - configurable pool size for io
+ * - configurable pool size for compute
+ */
+
 struct worker_ult_arg
 {
     int opt_abt_io;
@@ -169,7 +177,7 @@ static void worker_ult(void *_arg)
     char template[256];
     int fd;
 
-    //fprintf(stderr, "start\n");
+    fprintf(stderr, "start\n");
     ret = posix_memalign(&buffer, 4096, arg->opt_unit_size);
     assert(ret == 0);
     memset(buffer, 0, arg->opt_unit_size);
@@ -218,7 +226,7 @@ static void worker_ult(void *_arg)
     }
 
     free(buffer);
-    //fprintf(stderr, "end\n");
+    fprintf(stderr, "end\n");
 
     return;
 }
