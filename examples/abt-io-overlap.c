@@ -10,6 +10,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <openssl/rand.h>
 
 #include <abt.h>
 #include <abt-io.h>
@@ -25,21 +26,23 @@ int main(int argc, char **argv)
     ABT_thread *tid_array = NULL;
     double end, start;
     int i;
-    ABT_xstream *progress_xstreams;
-    ABT_pool progress_pool;
-    ABT_xstream xstream;
-    ABT_pool pool;
+    ABT_xstream *io_xstreams;
+    ABT_pool io_pool;
+    ABT_xstream *compute_xstreams;
+    ABT_pool compute_pool;
     abt_io_instance_id aid;
     int io_es_count = 4;
     int compute_es_count = 16;
-    int target_ops = 4;
+    int target_ops = 100;
 
     tid_array = malloc(target_ops * sizeof(*tid_array));
     assert(tid_array);
 
-    progress_xstreams = malloc(io_es_count * sizeof(*progress_xstreams));
-    assert(progress_xstreams);
+    io_xstreams = malloc(io_es_count * sizeof(*io_xstreams));
+    assert(io_xstreams);
 
+    compute_xstreams = malloc(compute_es_count * sizeof(*compute_xstreams));
+    assert(compute_xstreams);
 
     /* set up argobots */
     ret = ABT_init(argc, argv);
@@ -49,19 +52,16 @@ int main(int argc, char **argv)
     ret = ABT_snoozer_xstream_self_set();
     assert(ret == 0);
 
-    /* create a dedicated ES drive IO progress */
-    ret = ABT_snoozer_xstream_create(io_es_count, &progress_pool, progress_xstreams);
+    /* create dedicated pool drive IO */
+    ret = ABT_snoozer_xstream_create(io_es_count, &io_pool, io_xstreams);
     assert(ret == 0);
 
-    /* TODO: multiple ES for compute, not just 1 */
-    /* retrieve current pool to use for ULT concurrency */
-    ret = ABT_xstream_self(&xstream);
-    assert(ret == 0);
-    ret = ABT_xstream_get_main_pools(xstream, 1, &pool);
+    /* create dedicated pool for computatcomputen */
+    ret = ABT_snoozer_xstream_create(compute_es_count, &compute_pool, compute_xstreams);
     assert(ret == 0);
 
     /* initialize abt_io */
-    aid = abt_io_init(progress_pool);
+    aid = abt_io_init(io_pool);
     assert(aid != NULL);
 
     start = wtime();
@@ -69,7 +69,7 @@ int main(int argc, char **argv)
     for(i=0; i<target_ops; i++)
     {
         /* create ULTs */
-        ret = ABT_thread_create(pool, worker_ult, NULL, ABT_THREAD_ATTR_NULL, &tid_array[i]);
+        ret = ABT_thread_create(compute_pool, worker_ult, NULL, ABT_THREAD_ATTR_NULL, &tid_array[i]);
         assert(ret == 0);
     }
 
@@ -86,16 +86,24 @@ int main(int argc, char **argv)
     abt_io_finalize(aid);
 
     /* wait on the ESs to complete */
-    for(i=0; i<4; i++)
+    for(i=0; i<io_es_count; i++)
     {
-        ABT_xstream_join(progress_xstreams[i]);
-        ABT_xstream_free(&progress_xstreams[i]);
+        ABT_xstream_join(io_xstreams[i]);
+        ABT_xstream_free(&io_xstreams[i]);
+    }
+
+    /* wait on the ESs to complete */
+    for(i=0; i<compute_es_count; i++)
+    {
+        ABT_xstream_join(compute_xstreams[i]);
+        ABT_xstream_free(&compute_xstreams[i]);
     }
 
     ABT_finalize();
 
     free(tid_array);
-    free(progress_xstreams);
+    free(io_xstreams);
+    free(compute_xstreams);
 
     return(0);
 }
@@ -110,6 +118,9 @@ static void worker_ult(void *_arg)
     ret = posix_memalign(&buffer, 4096, size);
     assert(ret == 0);
     memset(buffer, 0, size);
+
+    ret = RAND_bytes(buffer, size);
+    assert(ret == 1);
 
 #if 0
     double now = wtime();

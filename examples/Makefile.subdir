@@ -6,5 +6,5 @@ examples_concurrent_write_bench_LDADD = src/libabt-io.a
 
 examples_abt_io_overlap_SOURCES = \
  examples/abt-io-overlap.c
-examples_abt_io_overlap_LDADD = src/libabt-io.a
+examples_abt_io_overlap_LDADD = src/libabt-io.a -lcrypto
 
