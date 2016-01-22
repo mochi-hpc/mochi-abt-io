@@ -53,16 +53,19 @@ struct abt_io_open_state
     const char *pathname;
     int flags;
     mode_t mode;
+    ABT_eventual eventual;
 };
 
 static void abt_io_open_fn(void *foo)
 {
     struct abt_io_open_state *state = foo;
+    int done;
 
     state->ret = open(state->pathname, state->flags, state->mode);
     if(state->ret < 0)
         state->ret = -errno;
 
+    ABT_eventual_set(state->eventual, &done, sizeof(done));
     return;
 }
 
@@ -70,22 +73,22 @@ int abt_io_open(abt_io_instance_id aid, const char* pathname, int flags, mode_t 
 {
     struct abt_io_open_state state;
     int ret;
-    ABT_thread tid;
+    int *done;
 
     state.ret = -ENOSYS;
     state.pathname = pathname;
     state.flags = flags;
     state.mode = mode;
+    ABT_eventual_create(sizeof(*done), &state.eventual);
 
     ret = ABT_thread_create(aid->progress_pool, abt_io_open_fn, &state,
-        ABT_THREAD_ATTR_NULL, &tid);
+        ABT_THREAD_ATTR_NULL, NULL);
     if(ret != 0)
     {
         return(-EINVAL);
     }
 
-    ABT_thread_join(tid);
-    ABT_thread_free(&tid);
+    ABT_eventual_wait(state.eventual, (void**)&done);
 
     return(state.ret);
 }
@@ -97,16 +100,19 @@ struct abt_io_pwrite_state
     const void *buf;
     size_t count;
     off_t offset;
+    ABT_eventual eventual;
 };
 
 static void abt_io_pwrite_fn(void *foo)
 {
     struct abt_io_pwrite_state *state = foo;
+    int done;
 
     state->ret = pwrite(state->fd, state->buf, state->count, state->offset);
     if(state->ret < 0)
         state->ret = -errno;
 
+    ABT_eventual_set(state->eventual, &done, sizeof(done));
     return;
 }
 
@@ -116,23 +122,23 @@ ssize_t abt_io_pwrite(abt_io_instance_id aid, int fd, const void *buf,
 {
     struct abt_io_pwrite_state state;
     int ret;
-    ABT_thread tid;
+    int *done;
 
     state.ret = -ENOSYS;
     state.fd = fd;
     state.buf = buf;
     state.count = count;
     state.offset = offset;
+    ABT_eventual_create(sizeof(*done), &state.eventual);
 
     ret = ABT_thread_create(aid->progress_pool, abt_io_pwrite_fn, &state,
-        ABT_THREAD_ATTR_NULL, &tid);
+        ABT_THREAD_ATTR_NULL, NULL);
     if(ret != 0)
     {
         return(-EINVAL);
     }
 
-    ABT_thread_join(tid);
-    ABT_thread_free(&tid);
+    ABT_eventual_wait(state.eventual, (void**)&done);
 
     return(state.ret);
 }
@@ -142,16 +148,19 @@ struct abt_io_mkostemp_state
     int ret;
     char *template;
     int flags;
+    ABT_eventual eventual;
 };
 
 static void abt_io_mkostemp_fn(void *foo)
 {
     struct abt_io_mkostemp_state *state = foo;
+    int done;
 
     state->ret = mkostemp(state->template, state->flags);
     if(state->ret < 0)
         state->ret = -errno;
 
+    ABT_eventual_set(state->eventual, &done, sizeof(done));
     return;
 }
 
@@ -159,21 +168,21 @@ int abt_io_mkostemp(abt_io_instance_id aid, char *template, int flags)
 {
     struct abt_io_mkostemp_state state;
     int ret;
-    ABT_thread tid;
+    int *done;
 
     state.ret = -ENOSYS;
     state.template = template;
     state.flags = flags;
+    ABT_eventual_create(sizeof(*done), &state.eventual);
 
     ret = ABT_thread_create(aid->progress_pool, abt_io_mkostemp_fn, &state,
-        ABT_THREAD_ATTR_NULL, &tid);
+        ABT_THREAD_ATTR_NULL, NULL);
     if(ret != 0)
     {
         return(-EINVAL);
     }
 
-    ABT_thread_join(tid);
-    ABT_thread_free(&tid);
+    ABT_eventual_wait(state.eventual, (void**)&done);
 
     return(state.ret);
 }
@@ -182,16 +191,19 @@ struct abt_io_unlink_state
 {
     int ret;
     const char *pathname;
+    ABT_eventual eventual;
 };
 
 static void abt_io_unlink_fn(void *foo)
 {
     struct abt_io_unlink_state *state = foo;
+    int done;
 
     state->ret = unlink(state->pathname);
     if(state->ret < 0)
         state->ret = -errno;
 
+    ABT_eventual_set(state->eventual, &done, sizeof(done));
     return;
 }
 
@@ -199,20 +211,20 @@ int abt_io_unlink(abt_io_instance_id aid, const char *pathname)
 {
     struct abt_io_unlink_state state;
     int ret;
-    ABT_thread tid;
+    int *done;
 
     state.ret = -ENOSYS;
     state.pathname = pathname;
+    ABT_eventual_create(sizeof(*done), &state.eventual);
 
     ret = ABT_thread_create(aid->progress_pool, abt_io_unlink_fn, &state,
-        ABT_THREAD_ATTR_NULL, &tid);
+        ABT_THREAD_ATTR_NULL, NULL);
     if(ret != 0)
     {
         return(-EINVAL);
     }
 
-    ABT_thread_join(tid);
-    ABT_thread_free(&tid);
+    ABT_eventual_wait(state.eventual, (void**)&done);
 
     return(state.ret);
 }
@@ -221,16 +233,19 @@ struct abt_io_close_state
 {
     int ret;
     int fd;
+    ABT_eventual eventual;
 };
 
 static void abt_io_close_fn(void *foo)
 {
     struct abt_io_close_state *state = foo;
+    int done;
 
     state->ret = close(state->fd);
     if(state->ret < 0)
         state->ret = -errno;
 
+    ABT_eventual_set(state->eventual, &done, sizeof(done));
     return;
 }
 
@@ -238,20 +253,20 @@ int abt_io_close(abt_io_instance_id aid, int fd)
 {
     struct abt_io_close_state state;
     int ret;
-    ABT_thread tid;
+    int *done;
 
     state.ret = -ENOSYS;
     state.fd = fd;
+    ABT_eventual_create(sizeof(*done), &state.eventual);
 
     ret = ABT_thread_create(aid->progress_pool, abt_io_close_fn, &state,
-        ABT_THREAD_ATTR_NULL, &tid);
+        ABT_THREAD_ATTR_NULL, NULL);
     if(ret != 0)
     {
         return(-EINVAL);
     }
 
-    ABT_thread_join(tid);
-    ABT_thread_free(&tid);
+    ABT_eventual_wait(state.eventual, (void**)&done);
 
     return(state.ret);
 
