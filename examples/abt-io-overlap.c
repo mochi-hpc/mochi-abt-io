@@ -22,6 +22,7 @@
 struct worker_ult_arg
 {
     int opt_io;
+    int opt_compute;
     int opt_abt_io;
     int opt_abt_snoozer;
     int opt_unit_size;
@@ -53,26 +54,28 @@ int main(int argc, char **argv)
     struct worker_ult_arg arg;
     int *done;
 
-    if(argc != 8)
+    if(argc != 9)
     {
-        fprintf(stderr, "Usage: abt-io-overlap <io> <abt_io 0|1> <abt_snoozer 0|1> <unit_size> <num_units> <compute_es_count> <io_es_count>\n");
+        fprintf(stderr, "Usage: abt-io-overlap <compute> <io> <abt_io 0|1> <abt_snoozer 0|1> <unit_size> <num_units> <compute_es_count> <io_es_count>\n");
         return(-1);
     }
 
-    ret = sscanf(argv[1], "%d", &arg.opt_io);
+    ret = sscanf(argv[1], "%d", &arg.opt_compute);
     assert(ret == 1);
-    ret = sscanf(argv[2], "%d", &arg.opt_abt_io);
+    ret = sscanf(argv[2], "%d", &arg.opt_io);
     assert(ret == 1);
-    ret = sscanf(argv[3], "%d", &arg.opt_abt_snoozer);
+    ret = sscanf(argv[3], "%d", &arg.opt_abt_io);
     assert(ret == 1);
-    ret = sscanf(argv[4], "%d", &arg.opt_unit_size);
+    ret = sscanf(argv[4], "%d", &arg.opt_abt_snoozer);
+    assert(ret == 1);
+    ret = sscanf(argv[5], "%d", &arg.opt_unit_size);
     assert(ret == 1);
     assert(arg.opt_unit_size % 4096 == 0);
-    ret = sscanf(argv[5], "%d", &arg.opt_num_units);
+    ret = sscanf(argv[6], "%d", &arg.opt_num_units);
     assert(ret == 1);
-    ret = sscanf(argv[6], "%d", &compute_es_count);
+    ret = sscanf(argv[7], "%d", &compute_es_count);
     assert(ret == 1);
-    ret = sscanf(argv[7], "%d", &io_es_count);
+    ret = sscanf(argv[8], "%d", &io_es_count);
     assert(ret == 1);
 
     io_xstreams = malloc(io_es_count * sizeof(*io_xstreams));
@@ -168,8 +171,8 @@ int main(int argc, char **argv)
     free(io_xstreams);
     free(compute_xstreams);
 
-    printf("#<opt_io>\t<opt_abt_io>\t<opt_abt_snoozer>\t<opt_unit_size>\t<opt_num_units>\t<opt_compute_es_count>\t<opt_io_es_count>\t<time (s)>\t<bytes/s>\t<ops/s>\n");
-    printf("%d\t%d\t%d\t%d\t%d\t%d\t%d\t%f\t%f\t%f\n", arg.opt_io, arg.opt_abt_io, arg.opt_abt_snoozer,
+    printf("#<opt_compute>\t<opt_io>\t<opt_abt_io>\t<opt_abt_snoozer>\t<opt_unit_size>\t<opt_num_units>\t<opt_compute_es_count>\t<opt_io_es_count>\t<time (s)>\t<bytes/s>\t<ops/s>\n");
+    printf("%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%f\t%f\t%f\n", arg.opt_compute, arg.opt_io, arg.opt_abt_io, arg.opt_abt_snoozer,
         arg.opt_unit_size, arg.opt_num_units, compute_es_count, io_es_count, seconds, ((double)arg.opt_unit_size* (double)arg.opt_num_units)/seconds, (double)arg.opt_num_units/seconds);
 
     return(0);
@@ -197,8 +200,11 @@ static void worker_ult(void *_arg)
     assert(ret == 0);
     memset(buffer, 0, arg->opt_unit_size);
 
-    ret = RAND_bytes(buffer, arg->opt_unit_size);
-    assert(ret == 1);
+    if(arg->opt_compute)
+    {
+        ret = RAND_bytes(buffer, arg->opt_unit_size);
+        assert(ret == 1);
+    }
 
     sprintf(template, "./data-XXXXXX");
 
