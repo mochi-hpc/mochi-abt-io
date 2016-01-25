@@ -81,8 +81,7 @@ int abt_io_open(abt_io_instance_id aid, const char* pathname, int flags, mode_t 
     state.mode = mode;
     ABT_eventual_create(sizeof(*done), &state.eventual);
 
-    ret = ABT_thread_create(aid->progress_pool, abt_io_open_fn, &state,
-        ABT_THREAD_ATTR_NULL, NULL);
+    ret = ABT_task_create(aid->progress_pool, abt_io_open_fn, &state, NULL);
     if(ret != 0)
     {
         return(-EINVAL);
@@ -131,8 +130,7 @@ ssize_t abt_io_pwrite(abt_io_instance_id aid, int fd, const void *buf,
     state.offset = offset;
     ABT_eventual_create(sizeof(*done), &state.eventual);
 
-    ret = ABT_thread_create(aid->progress_pool, abt_io_pwrite_fn, &state,
-        ABT_THREAD_ATTR_NULL, NULL);
+    ret = ABT_task_create(aid->progress_pool, abt_io_pwrite_fn, &state, NULL);
     if(ret != 0)
     {
         return(-EINVAL);
@@ -175,8 +173,7 @@ int abt_io_mkostemp(abt_io_instance_id aid, char *template, int flags)
     state.flags = flags;
     ABT_eventual_create(sizeof(*done), &state.eventual);
 
-    ret = ABT_thread_create(aid->progress_pool, abt_io_mkostemp_fn, &state,
-        ABT_THREAD_ATTR_NULL, NULL);
+    ret = ABT_task_create(aid->progress_pool, abt_io_mkostemp_fn, &state, NULL);
     if(ret != 0)
     {
         return(-EINVAL);
@@ -217,8 +214,7 @@ int abt_io_unlink(abt_io_instance_id aid, const char *pathname)
     state.pathname = pathname;
     ABT_eventual_create(sizeof(*done), &state.eventual);
 
-    ret = ABT_thread_create(aid->progress_pool, abt_io_unlink_fn, &state,
-        ABT_THREAD_ATTR_NULL, NULL);
+    ret = ABT_task_create(aid->progress_pool, abt_io_unlink_fn, &state, NULL);
     if(ret != 0)
     {
         return(-EINVAL);
@@ -259,8 +255,7 @@ int abt_io_close(abt_io_instance_id aid, int fd)
     state.fd = fd;
     ABT_eventual_create(sizeof(*done), &state.eventual);
 
-    ret = ABT_thread_create(aid->progress_pool, abt_io_close_fn, &state,
-        ABT_THREAD_ATTR_NULL, NULL);
+    ret = ABT_task_create(aid->progress_pool, abt_io_close_fn, &state, NULL);
     if(ret != 0)
     {
         return(-EINVAL);
