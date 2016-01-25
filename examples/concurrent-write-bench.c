@@ -146,6 +146,7 @@ static void abt_bench(int argc, char **argv, unsigned int concurrency, size_t si
     progress_xstreams = malloc(concurrency * sizeof(*progress_xstreams));
     assert(progress_xstreams);
 
+    printf("WARNING: this benchmark may have an issue with one core busy spinning, see comments.\n");
     /* set up argobots */
     ret = ABT_init(argc, argv);
     assert(ret == 0);
@@ -191,6 +192,10 @@ static void abt_bench(int argc, char **argv, unsigned int concurrency, size_t si
 
     arg.start_time = wtime();
 
+    /* TODO: this is likely to be causing the main thread to busy spin
+     * waiting for the ULTs to complete.  Need to confirm.  Can be addressed
+     * in Argobots possibly or by working around with an eventual wait here.
+     */
     for(i=0; i<concurrency; i++)
         ABT_thread_join(tid_array[i]);
 
