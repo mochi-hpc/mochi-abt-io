@@ -4,7 +4,8 @@ functions.
 
 ##  Dependencies
 
-* argobots (git://git.mcs.anl.gov/argo/argobots.git)
+* argobots (argobots-review repo, dev/opts-test branch):
+  (git://git.mcs.anl.gov/argo/argobots-review.git)
 * abt-snoozer (https://xgitlab.cels.anl.gov/sds/abt-snoozer)
 
 ## Building
