@@ -303,6 +303,9 @@ static void write_abt_bench(void *_arg)
 
         now = wtime();
     }
+
+    free(buffer);
+
     return;
 }
 
@@ -330,6 +333,8 @@ static void *write_pthread_bench(void *_arg)
 
         now = wtime();
     }
+    
+    free(buffer);
 
     return(NULL);
 }
