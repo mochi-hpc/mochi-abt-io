@@ -33,10 +33,11 @@ struct write_abt_arg
     int fd;
     double duration;
     abt_io_instance_id aid;
+    void* buffer;
 };
 
 static void write_abt_bench(void *_arg);
-static void abt_bench(int argc, char **argv, unsigned int concurrency, size_t size, 
+static void abt_bench(int argc, char **argv, int buffer_per_thread, unsigned int concurrency, size_t size, 
     double duration, const char* filename, unsigned int* ops_done, double *seconds);
 
 /* pthread data types and fn prototypes */
@@ -48,10 +49,11 @@ struct write_pthread_arg
     off_t *next_offset;
     int fd;
     double duration;
+    void* buffer;
 };
 
 static void* write_pthread_bench(void *_arg);
-static void pthread_bench(unsigned int concurrency, size_t size, 
+static void pthread_bench( int buffer_per_thread, unsigned int concurrency, size_t size, 
     double duration, const char* filename, unsigned int* ops_done, double *seconds);
 
 
@@ -65,43 +67,51 @@ int main(int argc, char **argv)
     size_t size;
     unsigned int concurrency;
     double duration;
+    int buffer_per_thread = 0;
 
-    if(argc != 5)
+    if(argc != 6)
     {
-        fprintf(stderr, "Usage: concurrent-write-bench <write_size> <concurrency> <duration> <file>\n");
+        fprintf(stderr, "Usage: concurrent-write-bench <write_size> <concurrency> <duration> <file> <buffer_per_thread (0|1)>\n");
         return(-1);
     }
 
     ret = sscanf(argv[1], "%zu", &size);
     if(ret != 1)
     {
-        fprintf(stderr, "Usage: concurrent-write-bench <write_size> <concurrency> <duration> <file>\n");
+        fprintf(stderr, "Usage: concurrent-write-bench <write_size> <concurrency> <duration> <file> <buffer_per_thread (0|1)>\n");
         return(-1);
     }
 
     ret = sscanf(argv[2], "%u", &concurrency);
     if(ret != 1)
     {
-        fprintf(stderr, "Usage: concurrent-write-bench <write_size> <concurrency> <duration> <file>\n");
+        fprintf(stderr, "Usage: concurrent-write-bench <write_size> <concurrency> <duration> <file> <buffer_per_thread (0|1)>\n");
         return(-1);
     }
 
     ret = sscanf(argv[3], "%lf", &duration);
     if(ret != 1)
     {
-        fprintf(stderr, "Usage: concurrent-write-bench <write_size> <concurrency> <duration> <file>\n");
+        fprintf(stderr, "Usage: concurrent-write-bench <write_size> <concurrency> <duration> <file> <buffer_per_thread (0|1)>\n");
+        return(-1);
+    }
+
+    ret = sscanf(argv[5], "%d", &buffer_per_thread);
+    if(ret != 1)
+    {
+        fprintf(stderr, "Usage: concurrent-write-bench <write_size> <concurrency> <duration> <file> <buffer_per_thread (0|1)>\n");
         return(-1);
     }
 
     /* run benchmarks */
     printf("# Running ABT benchmark...\n");
-    abt_bench(argc, argv, concurrency, size, duration, argv[4], &abt_ops_done, &abt_seconds);
+    abt_bench(argc, argv, buffer_per_thread, concurrency, size, duration, argv[4], &abt_ops_done, &abt_seconds);
     printf("# ...abt benchmark done.\n");
 
     sleep(1);
 
     printf("# Running pthread benchmark...\n");
-    pthread_bench(concurrency, size, duration, argv[4], &pthread_ops_done, &pthread_seconds);
+    pthread_bench(buffer_per_thread, concurrency, size, duration, argv[4], &pthread_ops_done, &pthread_seconds);
     printf("# ...pthread benchmark done.\n");
 
 
@@ -117,7 +127,7 @@ int main(int argc, char **argv)
     return(0);
 }
 
-static void abt_bench(int argc, char **argv, unsigned int concurrency, size_t size, double duration,
+static void abt_bench(int argc, char **argv, int buffer_per_thread, unsigned int concurrency, size_t size, double duration,
     const char *filename, unsigned int* ops_done, double *seconds)
 {
     ABT_thread *tid_array = NULL;
@@ -180,6 +190,15 @@ static void abt_bench(int argc, char **argv, unsigned int concurrency, size_t si
     arg.duration = duration;
     arg.aid = aid;
 
+    if(!buffer_per_thread)
+    {
+        ret = posix_memalign(&arg.buffer, 4096, arg.size);
+        assert(ret == 0);
+        memset(arg.buffer, 0, arg.size);
+    }
+    else
+        arg.buffer = NULL;
+
     arg.start_time = wtime();
 
     for(i=0; i<concurrency; i++)
@@ -217,13 +236,16 @@ static void abt_bench(int argc, char **argv, unsigned int concurrency, size_t si
     free(tid_array);
     free(progress_xstreams);
 
+    if(!buffer_per_thread)
+        free(arg.buffer);
+
     close(arg.fd);
     unlink(filename);
 
     return;
 }
 
-static void pthread_bench(unsigned int concurrency, size_t size, double duration,
+static void pthread_bench(int buffer_per_thread, unsigned int concurrency, size_t size, double duration,
     const char *filename, unsigned int* ops_done, double *seconds)
 {
     pthread_t *id_array = NULL;
@@ -251,6 +273,15 @@ static void pthread_bench(unsigned int concurrency, size_t size, double duration
     arg.next_offset = &next_offset;
     arg.duration = duration;
 
+    if(!buffer_per_thread)
+    {
+        ret = posix_memalign(&arg.buffer, 4096, arg.size);
+        assert(ret == 0);
+        memset(arg.buffer, 0, arg.size);
+    }
+    else
+        arg.buffer = NULL;
+
     arg.start_time = wtime();
 
     for(i=0; i<concurrency; i++)
@@ -273,6 +304,9 @@ static void pthread_bench(unsigned int concurrency, size_t size, double duration
     pthread_mutex_destroy(&mutex);
     free(id_array);
 
+    if(!buffer_per_thread)
+        free(arg.buffer);
+
     close(arg.fd);
     unlink(filename);
 
@@ -283,12 +317,16 @@ static void write_abt_bench(void *_arg)
 {
     struct write_abt_arg* arg = _arg;
     off_t my_offset;
-    void *buffer;
     size_t ret;
+    int do_free = 0;
 
-    ret = posix_memalign(&buffer, 4096, arg->size);
-    assert(ret == 0);
-    memset(buffer, 0, arg->size);
+    if(!arg->buffer)
+    {
+        ret = posix_memalign(&arg->buffer, 4096, arg->size);
+        assert(ret == 0);
+        memset(arg->buffer, 0, arg->size);
+        do_free = 1;
+    }
 
     double now = wtime();
     while((now-arg->start_time) < arg->duration) 
@@ -298,13 +336,14 @@ static void write_abt_bench(void *_arg)
         (*arg->next_offset) += arg->size;
         ABT_mutex_unlock(*arg->mutex);
 
-        ret = abt_io_pwrite(arg->aid, arg->fd, buffer, arg->size, my_offset);
+        ret = abt_io_pwrite(arg->aid, arg->fd, arg->buffer, arg->size, my_offset);
         assert(ret == arg->size);
 
         now = wtime();
     }
 
-    free(buffer);
+    if(do_free)
+        free(arg->buffer);
 
     return;
 }
@@ -313,12 +352,16 @@ static void *write_pthread_bench(void *_arg)
 {
     struct write_pthread_arg* arg = _arg;
     off_t my_offset;
-    void *buffer;
     size_t ret;
+    int do_free = 0;
 
-    ret = posix_memalign(&buffer, 4096, arg->size);
-    assert(ret == 0);
-    memset(buffer, 0, arg->size);
+    if(!arg->buffer)
+    {
+        ret = posix_memalign(&arg->buffer, 4096, arg->size);
+        assert(ret == 0);
+        memset(arg->buffer, 0, arg->size);
+        do_free = 1;
+    }
 
     double now = wtime();
     while((now-arg->start_time) < arg->duration) 
@@ -328,13 +371,14 @@ static void *write_pthread_bench(void *_arg)
         (*arg->next_offset) += arg->size;
         pthread_mutex_unlock(arg->mutex);
 
-        ret = pwrite(arg->fd, buffer, arg->size, my_offset);
+        ret = pwrite(arg->fd, arg->buffer, arg->size, my_offset);
         assert(ret == arg->size);
 
         now = wtime();
     }
     
-    free(buffer);
+    if(do_free)
+        free(arg->buffer);
 
     return(NULL);
 }
