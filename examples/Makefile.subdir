@@ -1,4 +1,4 @@
-bin_PROGRAMS += examples/concurrent-write-bench examples/abt-io-overlap
+bin_PROGRAMS += examples/concurrent-write-bench examples/abt-io-overlap examples/pthread-overlap
 
 examples_concurrent_write_bench_SOURCES = \
  examples/concurrent-write-bench.c
@@ -7,4 +7,8 @@ examples_concurrent_write_bench_LDADD = src/libabt-io.a
 examples_abt_io_overlap_SOURCES = \
  examples/abt-io-overlap.c
 examples_abt_io_overlap_LDADD = src/libabt-io.a -lcrypto
+
+examples_pthread_overlap_SOURCES = \
+ examples/pthread-overlap.c
+examples_pthread_overlap_LDADD = -lpthread
 
