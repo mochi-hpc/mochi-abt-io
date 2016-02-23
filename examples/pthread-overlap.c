@@ -12,6 +12,7 @@
 #include <fcntl.h>
 #include <openssl/rand.h>
 #include <errno.h>
+#include <pthread.h>
 
 #define INFLIGHT_LIMIT 64
 
@@ -21,15 +22,16 @@ struct worker_pthread_arg
     int opt_compute;
     int opt_unit_size;
     int opt_num_units;
-#if 0
-    ABT_cond cond;
-    ABT_mutex mutex;
-#endif
+    pthread_cond_t cond;
+    pthread_mutex_t mutex;
     int inflight;
     int completed;
+    pthread_cond_t done_cond;
+    pthread_mutex_t done_mutex;
+    int done;
 };
 
-static void worker_pthread(void *_arg);
+static void *worker_pthread(void *_arg);
 static double wtime(void);
 
 int main(int argc, char **argv) 
@@ -39,7 +41,8 @@ int main(int argc, char **argv)
     double end, start;
     int i;
     struct worker_pthread_arg arg;
-    int *done;
+    pthread_attr_t attr;
+    pthread_t tid;
 
     if(argc != 5)
     {
@@ -57,24 +60,23 @@ int main(int argc, char **argv)
     ret = sscanf(argv[4], "%d", &arg.opt_num_units);
     assert(ret == 1);
 
-#if 0
-    ABT_cond_create(&arg.cond);
-    ABT_mutex_create(&arg.mutex);
-    ABT_eventual_create(sizeof(*done), &arg.eventual);
-#endif
+    pthread_cond_init(&arg.cond, NULL);
+    pthread_mutex_init(&arg.mutex, NULL);
+    pthread_cond_init(&arg.done_cond, NULL);
+    pthread_mutex_init(&arg.done_mutex, NULL);
 
     arg.inflight = 0;
+    arg.done = 0;
 
     start = wtime();
+
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
     for(i=0; i<arg.opt_num_units; i++)
     {
         /* create ULTs */
-#if 0
-        ret = ABT_thread_create(compute_pool, worker_ult, &arg, ABT_THREAD_ATTR_NULL, NULL);
-#else
-        ret = 0;
-#endif
+        ret = pthread_create(&tid, &attr, worker_pthread, &arg);
         assert(ret == 0);
     }
 
@@ -105,7 +107,7 @@ int main(int argc, char **argv)
     return(0);
 }
 
-static void worker_pthread(void *_arg)
+static void *worker_pthread(void *_arg)
 {
     struct worker_pthread_arg* arg = _arg;
     void *buffer;
@@ -190,7 +192,7 @@ static void worker_pthread(void *_arg)
         ABT_eventual_set(arg->eventual, &done, sizeof(done));
 #endif
 
-    return;
+    return(NULL);
 }
 
 static double wtime(void)
