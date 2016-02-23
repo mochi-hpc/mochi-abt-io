@@ -80,25 +80,19 @@ int main(int argc, char **argv)
         assert(ret == 0);
     }
 
-#if 0
-    ABT_eventual_wait(arg.eventual, (void**)&done);
-#endif
+    pthread_mutex_lock(&arg.done_mutex);
+    while(!arg.done)
+        pthread_cond_wait(&arg.done_cond, &arg.done_mutex);
+    pthread_mutex_unlock(&arg.done_mutex);
 
     end = wtime();
    
     seconds = end-start;
 
-#if 0
-    /* wait on the compute ESs to complete */
-    for(i=0; i<compute_es_count; i++)
-    {
-        ABT_xstream_join(compute_xstreams[i]);
-        ABT_xstream_free(&compute_xstreams[i]);
-    }
-
-    ABT_cond_free(&arg.cond);
-    ABT_mutex_free(&arg.mutex);
-#endif
+    pthread_mutex_destroy(&arg.mutex);
+    pthread_mutex_destroy(&arg.done_mutex);
+    pthread_cond_destroy(&arg.cond);
+    pthread_cond_destroy(&arg.done_cond);
 
     printf("#<opt_compute>\t<opt_io>\t<opt_unit_size>\t<opt_num_units>\t<time (s)>\t<bytes/s>\t<ops/s>\n");
     printf("%d\t%d\t%d\t%d\t%f\t%f\t%f\n", arg.opt_compute, arg.opt_io, 
@@ -116,14 +110,13 @@ static void *worker_pthread(void *_arg)
     int fd;
     int done = 0;
 
-#if 0
-    ABT_mutex_lock(arg->mutex);
+    pthread_mutex_lock(&arg->mutex);
     while(arg->inflight >= INFLIGHT_LIMIT) 
     {
-        ABT_cond_wait(arg->cond, arg->mutex);
+        pthread_cond_wait(&arg->cond, &arg->mutex);
     }
     arg->inflight++;
-    ABT_mutex_unlock(arg->mutex);
+    pthread_mutex_unlock(&arg->mutex);
 
     //fprintf(stderr, "start\n");
     ret = posix_memalign(&buffer, 4096, arg->opt_unit_size);
@@ -140,57 +133,40 @@ static void *worker_pthread(void *_arg)
 
     if(arg->opt_io)
     {
-        if(arg->opt_abt_io)
+        fd = mkostemp(template, O_DIRECT|O_SYNC);
+        if(fd < 0)
         {
-            fd = abt_io_mkostemp(arg->aid, template, O_DIRECT|O_SYNC);
-            if(fd < 0)
-            {
-                fprintf(stderr, "abt_io_mkostemp: %d\n", fd);
-            }
-            assert(fd >= 0);
-
-            ret = abt_io_pwrite(arg->aid, fd, buffer, arg->opt_unit_size, 0);
-            assert(ret == arg->opt_unit_size);
-
-            ret = abt_io_close(arg->aid, fd);
-            assert(ret == 0);
-
-            ret = abt_io_unlink(arg->aid, template);
-            assert(ret == 0);
+            perror("mkostemp");
+            fprintf(stderr, "errno: %d\n", errno);
         }
-        else
-        {
-            fd = mkostemp(template, O_DIRECT|O_SYNC);
-            if(fd < 0)
-            {
-                perror("mkostemp");
-                fprintf(stderr, "errno: %d\n", errno);
-            }
-            assert(fd >= 0);
+        assert(fd >= 0);
 
-            ret = pwrite(fd, buffer, arg->opt_unit_size, 0);
-            assert(ret == arg->opt_unit_size);
+        ret = pwrite(fd, buffer, arg->opt_unit_size, 0);
+        assert(ret == arg->opt_unit_size);
 
-            ret = close(fd);
-            assert(ret == 0);
+        ret = close(fd);
+        assert(ret == 0);
 
-            ret = unlink(template);
-            assert(ret == 0);
-        }
+        ret = unlink(template);
+        assert(ret == 0);
     }
 
     free(buffer);
     //fprintf(stderr, "end\n");
 
-    ABT_mutex_lock(arg->mutex);
+    pthread_mutex_lock(&arg->mutex);
     arg->inflight--;
-    ABT_cond_signal(arg->cond);
+    pthread_cond_signal(&arg->cond);
     arg->completed++;
-    ABT_mutex_unlock(arg->mutex);
+    pthread_mutex_unlock(&arg->mutex);
 
     if(arg->completed == arg->opt_num_units)
-        ABT_eventual_set(arg->eventual, &done, sizeof(done));
-#endif
+    {
+        pthread_mutex_lock(&arg->done_mutex);
+        arg->done = 1;
+        pthread_cond_signal(&arg->done_cond);
+        pthread_mutex_unlock(&arg->done_mutex);
+    }
 
     return(NULL);
 }

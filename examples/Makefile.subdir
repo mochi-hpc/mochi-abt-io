@@ -10,5 +10,5 @@ examples_abt_io_overlap_LDADD = src/libabt-io.a -lcrypto
 
 examples_pthread_overlap_SOURCES = \
  examples/pthread-overlap.c
-examples_pthread_overlap_LDADD = -lpthread
+examples_pthread_overlap_LDADD = -lpthread -lcrypto
 
