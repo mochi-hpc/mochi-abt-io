@@ -1,0 +1,6 @@
+EXTRA_DIST += \
+ tests/concurrent-write-bench.sh 
+
+TESTS += \
+ tests/concurrent-write-bench.sh
+
