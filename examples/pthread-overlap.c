@@ -24,11 +24,7 @@ struct worker_pthread_arg
     int opt_num_units;
     pthread_cond_t cond;
     pthread_mutex_t mutex;
-    int inflight;
     int completed;
-    pthread_cond_t done_cond;
-    pthread_mutex_t done_mutex;
-    int done;
 };
 
 static void *worker_pthread(void *_arg);
@@ -62,11 +58,7 @@ int main(int argc, char **argv)
 
     pthread_cond_init(&arg.cond, NULL);
     pthread_mutex_init(&arg.mutex, NULL);
-    pthread_cond_init(&arg.done_cond, NULL);
-    pthread_mutex_init(&arg.done_mutex, NULL);
-
-    arg.inflight = 0;
-    arg.done = 0;
+    arg.completed = 0;
 
     start = wtime();
 
@@ -75,25 +67,30 @@ int main(int argc, char **argv)
 
     for(i=0; i<arg.opt_num_units; i++)
     {
-        /* create ULTs */
+        pthread_mutex_lock(&arg.mutex);
+        while((i + 1 - arg.completed) >= INFLIGHT_LIMIT)
+            pthread_cond_wait(&arg.cond, &arg.mutex);
+        pthread_mutex_unlock(&arg.mutex);
+
+        /* create threads */
         ret = pthread_create(&tid, &attr, worker_pthread, &arg);
         assert(ret == 0);
     }
 
-    pthread_mutex_lock(&arg.done_mutex);
-    while(!arg.done)
-        pthread_cond_wait(&arg.done_cond, &arg.done_mutex);
-    pthread_mutex_unlock(&arg.done_mutex);
+    pthread_mutex_lock(&arg.mutex);
+    while(arg.completed < arg.opt_num_units)
+        pthread_cond_wait(&arg.cond, &arg.mutex);
+    pthread_mutex_unlock(&arg.mutex);
 
     end = wtime();
    
     seconds = end-start;
 
     pthread_mutex_destroy(&arg.mutex);
-    pthread_mutex_destroy(&arg.done_mutex);
     pthread_cond_destroy(&arg.cond);
-    pthread_cond_destroy(&arg.done_cond);
 
+
+    assert(arg.opt_num_units == arg.completed);
     printf("#<opt_compute>\t<opt_io>\t<opt_unit_size>\t<opt_num_units>\t<time (s)>\t<bytes/s>\t<ops/s>\n");
     printf("%d\t%d\t%d\t%d\t%f\t%f\t%f\n", arg.opt_compute, arg.opt_io, 
         arg.opt_unit_size, arg.opt_num_units, seconds, ((double)arg.opt_unit_size* (double)arg.opt_num_units)/seconds, (double)arg.opt_num_units/seconds);
@@ -109,14 +106,6 @@ static void *worker_pthread(void *_arg)
     char template[256];
     int fd;
     int done = 0;
-
-    pthread_mutex_lock(&arg->mutex);
-    while(arg->inflight >= INFLIGHT_LIMIT) 
-    {
-        pthread_cond_wait(&arg->cond, &arg->mutex);
-    }
-    arg->inflight++;
-    pthread_mutex_unlock(&arg->mutex);
 
     //fprintf(stderr, "start\n");
     ret = posix_memalign(&buffer, 4096, arg->opt_unit_size);
@@ -155,18 +144,9 @@ static void *worker_pthread(void *_arg)
     //fprintf(stderr, "end\n");
 
     pthread_mutex_lock(&arg->mutex);
-    arg->inflight--;
-    pthread_cond_signal(&arg->cond);
     arg->completed++;
+    pthread_cond_signal(&arg->cond);
     pthread_mutex_unlock(&arg->mutex);
-
-    if(arg->completed == arg->opt_num_units)
-    {
-        pthread_mutex_lock(&arg->done_mutex);
-        arg->done = 1;
-        pthread_cond_signal(&arg->done_cond);
-        pthread_mutex_unlock(&arg->done_mutex);
-    }
 
     return(NULL);
 }
