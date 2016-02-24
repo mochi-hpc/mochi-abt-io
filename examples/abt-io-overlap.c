@@ -30,9 +30,7 @@ struct worker_ult_arg
     abt_io_instance_id aid;
     ABT_cond cond;
     ABT_mutex mutex;
-    int inflight;
     int completed;
-    ABT_eventual eventual;
 };
 
 static void worker_ult(void *_arg);
@@ -125,19 +123,26 @@ int main(int argc, char **argv)
 
     ABT_cond_create(&arg.cond);
     ABT_mutex_create(&arg.mutex);
-    ABT_eventual_create(sizeof(*done), &arg.eventual);
-    arg.inflight = 0;
+    arg.completed = 0;
 
     start = wtime();
 
     for(i=0; i<arg.opt_num_units; i++)
     {
+        ABT_mutex_lock(arg.mutex);
+        while((i + 1 - arg.completed) >= INFLIGHT_LIMIT)
+            ABT_cond_wait(arg.cond, arg.mutex);
+        ABT_mutex_unlock(arg.mutex);
+
         /* create ULTs */
         ret = ABT_thread_create(compute_pool, worker_ult, &arg, ABT_THREAD_ATTR_NULL, NULL);
         assert(ret == 0);
     }
 
-    ABT_eventual_wait(arg.eventual, (void**)&done);
+    ABT_mutex_lock(arg.mutex);
+    while(arg.completed < arg.opt_num_units)
+        ABT_cond_wait(arg.cond, arg.mutex);
+    ABT_mutex_unlock(arg.mutex);
 
     end = wtime();
    
@@ -171,6 +176,7 @@ int main(int argc, char **argv)
     free(io_xstreams);
     free(compute_xstreams);
 
+    assert(arg.opt_num_units == arg.completed);
     printf("#<opt_compute>\t<opt_io>\t<opt_abt_io>\t<opt_abt_snoozer>\t<opt_unit_size>\t<opt_num_units>\t<opt_compute_es_count>\t<opt_io_es_count>\t<time (s)>\t<bytes/s>\t<ops/s>\n");
     printf("%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%f\t%f\t%f\n", arg.opt_compute, arg.opt_io, arg.opt_abt_io, arg.opt_abt_snoozer,
         arg.opt_unit_size, arg.opt_num_units, compute_es_count, io_es_count, seconds, ((double)arg.opt_unit_size* (double)arg.opt_num_units)/seconds, (double)arg.opt_num_units/seconds);
@@ -186,14 +192,6 @@ static void worker_ult(void *_arg)
     char template[256];
     int fd;
     int done = 0;
-
-    ABT_mutex_lock(arg->mutex);
-    while(arg->inflight >= INFLIGHT_LIMIT) 
-    {
-        ABT_cond_wait(arg->cond, arg->mutex);
-    }
-    arg->inflight++;
-    ABT_mutex_unlock(arg->mutex);
 
     //fprintf(stderr, "start\n");
     ret = posix_memalign(&buffer, 4096, arg->opt_unit_size);
@@ -253,13 +251,9 @@ static void worker_ult(void *_arg)
     //fprintf(stderr, "end\n");
 
     ABT_mutex_lock(arg->mutex);
-    arg->inflight--;
-    ABT_cond_signal(arg->cond);
     arg->completed++;
+    ABT_cond_signal(arg->cond);
     ABT_mutex_unlock(arg->mutex);
-
-    if(arg->completed == arg->opt_num_units)
-        ABT_eventual_set(arg->eventual, &done, sizeof(done));
 
     return;
 }
