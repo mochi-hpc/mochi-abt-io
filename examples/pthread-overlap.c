@@ -16,7 +16,7 @@
 
 #define INFLIGHT_LIMIT 64
 
-struct worker_pthread_arg
+struct worker_pthread_common
 {
     int opt_io;
     int opt_compute;
@@ -25,6 +25,12 @@ struct worker_pthread_arg
     pthread_cond_t cond;
     pthread_mutex_t mutex;
     int completed;
+};
+
+struct worker_pthread_arg
+{
+    struct worker_pthread_common *common;
+    void* buffer;
 };
 
 static void *worker_pthread(void *_arg);
@@ -36,7 +42,8 @@ int main(int argc, char **argv)
     double seconds;
     double end, start;
     int i;
-    struct worker_pthread_arg arg;
+    struct worker_pthread_arg *arg_array;
+    struct worker_pthread_common common;
     pthread_attr_t attr;
     pthread_t tid;
 
@@ -46,54 +53,68 @@ int main(int argc, char **argv)
         return(-1);
     }
 
-    ret = sscanf(argv[1], "%d", &arg.opt_compute);
+    ret = sscanf(argv[1], "%d", &common.opt_compute);
     assert(ret == 1);
-    ret = sscanf(argv[2], "%d", &arg.opt_io);
+    ret = sscanf(argv[2], "%d", &common.opt_io);
     assert(ret == 1);
-    ret = sscanf(argv[3], "%d", &arg.opt_unit_size);
+    ret = sscanf(argv[3], "%d", &common.opt_unit_size);
     assert(ret == 1);
-    assert(arg.opt_unit_size % 4096 == 0);
-    ret = sscanf(argv[4], "%d", &arg.opt_num_units);
+    assert(common.opt_unit_size % 4096 == 0);
+    ret = sscanf(argv[4], "%d", &common.opt_num_units);
     assert(ret == 1);
 
-    pthread_cond_init(&arg.cond, NULL);
-    pthread_mutex_init(&arg.mutex, NULL);
-    arg.completed = 0;
+    pthread_cond_init(&common.cond, NULL);
+    pthread_mutex_init(&common.mutex, NULL);
+    common.completed = 0;
+
+    arg_array = malloc(sizeof(*arg_array)*common.opt_num_units);
+    assert(arg_array);
+
+    for(i=0; i<common.opt_num_units; i++)
+    {
+        arg_array[i].common = &common;
+        ret = posix_memalign(&arg_array[i].buffer, 4096, common.opt_unit_size);
+        assert(ret == 0);
+        memset(arg_array[i].buffer, 0, common.opt_unit_size);
+    }
 
     start = wtime();
 
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
-    for(i=0; i<arg.opt_num_units; i++)
+    for(i=0; i<common.opt_num_units; i++)
     {
-        pthread_mutex_lock(&arg.mutex);
-        while((i + 1 - arg.completed) >= INFLIGHT_LIMIT)
-            pthread_cond_wait(&arg.cond, &arg.mutex);
-        pthread_mutex_unlock(&arg.mutex);
+        pthread_mutex_lock(&common.mutex);
+        while((i + 1 - common.completed) >= INFLIGHT_LIMIT)
+            pthread_cond_wait(&common.cond, &common.mutex);
+        pthread_mutex_unlock(&common.mutex);
 
         /* create threads */
-        ret = pthread_create(&tid, &attr, worker_pthread, &arg);
+        ret = pthread_create(&tid, &attr, worker_pthread, &arg_array[i]);
         assert(ret == 0);
     }
 
-    pthread_mutex_lock(&arg.mutex);
-    while(arg.completed < arg.opt_num_units)
-        pthread_cond_wait(&arg.cond, &arg.mutex);
-    pthread_mutex_unlock(&arg.mutex);
+    pthread_mutex_lock(&common.mutex);
+    while(common.completed < common.opt_num_units)
+        pthread_cond_wait(&common.cond, &common.mutex);
+    pthread_mutex_unlock(&common.mutex);
 
     end = wtime();
    
     seconds = end-start;
 
-    pthread_mutex_destroy(&arg.mutex);
-    pthread_cond_destroy(&arg.cond);
+    pthread_mutex_destroy(&common.mutex);
+    pthread_cond_destroy(&common.cond);
 
+    for(i=0; i<common.opt_num_units; i++)
+        free(arg_array[i].buffer);
+    free(arg_array);
 
-    assert(arg.opt_num_units == arg.completed);
+    assert(common.opt_num_units == common.completed);
     printf("#<opt_compute>\t<opt_io>\t<opt_unit_size>\t<opt_num_units>\t<time (s)>\t<bytes/s>\t<ops/s>\n");
-    printf("%d\t%d\t%d\t%d\t%f\t%f\t%f\n", arg.opt_compute, arg.opt_io, 
-        arg.opt_unit_size, arg.opt_num_units, seconds, ((double)arg.opt_unit_size* (double)arg.opt_num_units)/seconds, (double)arg.opt_num_units/seconds);
+    printf("%d\t%d\t%d\t%d\t%f\t%f\t%f\n", common.opt_compute, common.opt_io, 
+        common.opt_unit_size, common.opt_num_units, seconds, ((double)common.opt_unit_size* (double)common.opt_num_units)/seconds, (double)common.opt_num_units/seconds);
 
     return(0);
 }
@@ -101,26 +122,22 @@ int main(int argc, char **argv)
 static void *worker_pthread(void *_arg)
 {
     struct worker_pthread_arg* arg = _arg;
-    void *buffer;
+    struct worker_pthread_common *common = arg->common;
+    void *buffer = arg->buffer;
     size_t ret;
     char template[256];
     int fd;
     int done = 0;
 
-    //fprintf(stderr, "start\n");
-    ret = posix_memalign(&buffer, 4096, arg->opt_unit_size);
-    assert(ret == 0);
-    memset(buffer, 0, arg->opt_unit_size);
-
-    if(arg->opt_compute)
+    if(common->opt_compute)
     {
-        ret = RAND_bytes(buffer, arg->opt_unit_size);
+        ret = RAND_bytes(buffer, common->opt_unit_size);
         assert(ret == 1);
     }
 
     sprintf(template, "./data-XXXXXX");
 
-    if(arg->opt_io)
+    if(common->opt_io)
     {
         fd = mkostemp(template, O_DIRECT|O_SYNC);
         if(fd < 0)
@@ -130,8 +147,8 @@ static void *worker_pthread(void *_arg)
         }
         assert(fd >= 0);
 
-        ret = pwrite(fd, buffer, arg->opt_unit_size, 0);
-        assert(ret == arg->opt_unit_size);
+        ret = pwrite(fd, buffer, common->opt_unit_size, 0);
+        assert(ret == common->opt_unit_size);
 
         ret = close(fd);
         assert(ret == 0);
@@ -140,13 +157,10 @@ static void *worker_pthread(void *_arg)
         assert(ret == 0);
     }
 
-    free(buffer);
-    //fprintf(stderr, "end\n");
-
-    pthread_mutex_lock(&arg->mutex);
-    arg->completed++;
-    pthread_cond_signal(&arg->cond);
-    pthread_mutex_unlock(&arg->mutex);
+    pthread_mutex_lock(&common->mutex);
+    common->completed++;
+    pthread_cond_signal(&common->cond);
+    pthread_mutex_unlock(&common->mutex);
 
     return(NULL);
 }
