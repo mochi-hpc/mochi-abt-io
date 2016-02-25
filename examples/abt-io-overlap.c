@@ -17,8 +17,6 @@
 #include <abt-io.h>
 #include <abt-snoozer.h>
 
-#define INFLIGHT_LIMIT 64
-
 struct worker_ult_common
 {
     int opt_io;
@@ -31,6 +29,7 @@ struct worker_ult_common
     ABT_cond cond;
     ABT_mutex mutex;
     int completed;
+    int inflight_threads;
 };
 
 struct worker_ult_arg
@@ -59,9 +58,9 @@ int main(int argc, char **argv)
     struct worker_ult_common common;
     int *done;
 
-    if(argc != 9)
+    if(argc != 10)
     {
-        fprintf(stderr, "Usage: abt-io-overlap <compute> <io> <abt_io 0|1> <abt_snoozer 0|1> <unit_size> <num_units> <compute_es_count> <io_es_count>\n");
+        fprintf(stderr, "Usage: abt-io-overlap <compute> <io> <abt_io 0|1> <abt_snoozer 0|1> <unit_size> <num_units> <compute_es_count> <io_es_count> <inflight_threads>\n");
         return(-1);
     }
 
@@ -81,6 +80,8 @@ int main(int argc, char **argv)
     ret = sscanf(argv[7], "%d", &compute_es_count);
     assert(ret == 1);
     ret = sscanf(argv[8], "%d", &io_es_count);
+    assert(ret == 1);
+    ret = sscanf(argv[9], "%d", &common.inflight_threads);
     assert(ret == 1);
 
     io_xstreams = malloc(io_es_count * sizeof(*io_xstreams));
@@ -147,7 +148,7 @@ int main(int argc, char **argv)
     for(i=0; i<common.opt_num_units; i++)
     {
         ABT_mutex_lock(common.mutex);
-        while((i + 1 - common.completed) >= INFLIGHT_LIMIT)
+        while((i + 1 - common.completed) >= common.inflight_threads)
             ABT_cond_wait(common.cond, common.mutex);
         ABT_mutex_unlock(common.mutex);
 

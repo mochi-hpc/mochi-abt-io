@@ -14,8 +14,6 @@
 #include <errno.h>
 #include <pthread.h>
 
-#define INFLIGHT_LIMIT 64
-
 struct worker_pthread_common
 {
     int opt_io;
@@ -25,6 +23,7 @@ struct worker_pthread_common
     pthread_cond_t cond;
     pthread_mutex_t mutex;
     int completed;
+    int inflight_threads;
 };
 
 struct worker_pthread_arg
@@ -47,9 +46,9 @@ int main(int argc, char **argv)
     pthread_attr_t attr;
     pthread_t tid;
 
-    if(argc != 5)
+    if(argc != 6)
     {
-        fprintf(stderr, "Usage: pthread-overlap <compute> <io> <unit_size> <num_units>\n");
+        fprintf(stderr, "Usage: pthread-overlap <compute> <io> <unit_size> <num_units> <inflight_threads>\n");
         return(-1);
     }
 
@@ -61,6 +60,8 @@ int main(int argc, char **argv)
     assert(ret == 1);
     assert(common.opt_unit_size % 4096 == 0);
     ret = sscanf(argv[4], "%d", &common.opt_num_units);
+    assert(ret == 1);
+    ret = sscanf(argv[5], "%d", &common.inflight_threads);
     assert(ret == 1);
 
     pthread_cond_init(&common.cond, NULL);
@@ -86,7 +87,7 @@ int main(int argc, char **argv)
     for(i=0; i<common.opt_num_units; i++)
     {
         pthread_mutex_lock(&common.mutex);
-        while((i + 1 - common.completed) >= INFLIGHT_LIMIT)
+        while((i + 1 - common.completed) >= common.inflight_threads)
             pthread_cond_wait(&common.cond, &common.mutex);
         pthread_mutex_unlock(&common.mutex);
 
