@@ -37,7 +37,9 @@ struct write_abt_arg
 };
 
 static void write_abt_bench(void *_arg);
-static void abt_bench(int argc, char **argv, int buffer_per_thread, unsigned int concurrency, size_t size, 
+static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t size, 
+    double duration, const char* filename, unsigned int* ops_done, double *seconds);
+static void abt_bench_nb(int buffer_per_thread, unsigned int concurrency, size_t size, 
     double duration, const char* filename, unsigned int* ops_done, double *seconds);
 
 /* pthread data types and fn prototypes */
@@ -62,12 +64,19 @@ static double wtime(void);
 int main(int argc, char **argv) 
 {
     int ret;
-    unsigned abt_ops_done, pthread_ops_done;
-    double abt_seconds, pthread_seconds;
+    unsigned abt_ops_done, abt_nb_ops_done, pthread_ops_done;
+    double abt_seconds, abt_nb_seconds, pthread_seconds;
     size_t size;
     unsigned int concurrency;
     double duration;
     int buffer_per_thread = 0;
+
+    ABT_init(argc, argv);
+
+    /* set primary ES to idle without polling */
+    ret = ABT_snoozer_xstream_self_set();
+    assert(ret == 0);
+
 
     if(argc != 6)
     {
@@ -102,11 +111,18 @@ int main(int argc, char **argv)
         fprintf(stderr, "Usage: concurrent-write-bench <write_size> <concurrency> <duration> <file> <buffer_per_thread (0|1)>\n");
         return(-1);
     }
+    buffer_per_thread = !!buffer_per_thread;
 
     /* run benchmarks */
     printf("# Running ABT benchmark...\n");
-    abt_bench(argc, argv, buffer_per_thread, concurrency, size, duration, argv[4], &abt_ops_done, &abt_seconds);
-    printf("# ...abt benchmark done.\n");
+    abt_bench(buffer_per_thread, concurrency, size, duration, argv[4], &abt_ops_done, &abt_seconds);
+    printf("# ...ABT benchmark done.\n");
+
+    printf("# Running ABT (nonblocking) benchmark...\n");
+    abt_bench_nb(buffer_per_thread, concurrency, size, duration, argv[4], &abt_nb_ops_done, &abt_nb_seconds);
+    printf("# ...ABT (nonblocking) benchmark done.\n");
+
+    ABT_finalize();
 
     sleep(1);
 
@@ -120,6 +136,9 @@ int main(int argc, char **argv)
     printf("abt\t%u\t%zu\t%u\t%f\t%f\n",
         concurrency, size, abt_ops_done, abt_seconds, 
         ((((double)size*(double)abt_ops_done))/abt_seconds)/(1024.0*1024.0));
+    printf("abt_nb\t%u\t%zu\t%u\t%f\t%f\n",
+        concurrency, size, abt_nb_ops_done, abt_nb_seconds, 
+        ((((double)size*(double)abt_nb_ops_done))/abt_nb_seconds)/(1024.0*1024.0));
     printf("pthread\t%u\t%zu\t%u\t%f\t%f\n",
         concurrency, size, pthread_ops_done, pthread_seconds, 
         ((((double)size*(double)pthread_ops_done))/pthread_seconds)/(1024.0*1024.0));
@@ -127,7 +146,7 @@ int main(int argc, char **argv)
     return(0);
 }
 
-static void abt_bench(int argc, char **argv, int buffer_per_thread, unsigned int concurrency, size_t size, double duration,
+static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t size, double duration,
     const char *filename, unsigned int* ops_done, double *seconds)
 {
     ABT_thread *tid_array = NULL;
@@ -136,7 +155,7 @@ static void abt_bench(int argc, char **argv, int buffer_per_thread, unsigned int
     off_t next_offset = 0;
     int ret;
     double end;
-    int i;
+    unsigned int i;
     ABT_xstream *progress_xstreams;
     ABT_pool progress_pool;
     ABT_xstream xstream;
@@ -155,14 +174,6 @@ static void abt_bench(int argc, char **argv, int buffer_per_thread, unsigned int
 
     progress_xstreams = malloc(concurrency * sizeof(*progress_xstreams));
     assert(progress_xstreams);
-
-    /* set up argobots */
-    ret = ABT_init(argc, argv);
-    assert(ret == 0);
-
-    /* set primary ES to idle without polling */
-    ret = ABT_snoozer_xstream_self_set();
-    assert(ret == 0);
 
     /* create a dedicated ES drive Mercury progress */
     /* NOTE: for now we are going to use the same number of execution streams
@@ -224,13 +235,11 @@ static void abt_bench(int argc, char **argv, int buffer_per_thread, unsigned int
     abt_io_finalize(aid);
 
     /* wait on the ESs to complete */
-    for(i=0; i<4; i++)
+    for(i=0; i<concurrency; i++)
     {
         ABT_xstream_join(progress_xstreams[i]);
         ABT_xstream_free(&progress_xstreams[i]);
     }
-
-    ABT_finalize();
 
     ABT_mutex_free(&mutex);
     free(tid_array);
@@ -245,6 +254,116 @@ static void abt_bench(int argc, char **argv, int buffer_per_thread, unsigned int
     return;
 }
 
+static void abt_bench_nb(int buffer_per_thread, unsigned int concurrency, size_t size, double duration,
+    const char *filename, unsigned int* ops_done, double *seconds)
+{
+    int fd;
+    off_t next_offset = 0;
+    int ret;
+    double end;
+    unsigned int i;
+    ABT_xstream *progress_xstreams;
+    ABT_pool progress_pool;
+    abt_io_instance_id aid;
+    void **buffers = NULL;
+    unsigned int num_buffers = 0;
+    double start_time;
+    abt_io_op_t **ops;
+    ssize_t *wrets;
+
+    fd = open(filename, O_WRONLY|O_CREAT|O_DIRECT|O_SYNC, S_IWUSR|S_IRUSR);
+    if(!fd)
+    {
+        perror("open");
+        assert(0);
+    }
+
+    progress_xstreams = malloc(concurrency * sizeof(*progress_xstreams));
+    assert(progress_xstreams);
+
+    /* create a dedicated ES drive Mercury progress */
+    /* NOTE: for now we are going to use the same number of execution streams
+     * in the io pool as the desired level of issue concurrency, but this
+     * doesn't need to be the case in general.
+     */
+    ret = ABT_snoozer_xstream_create(concurrency, &progress_pool, progress_xstreams);
+    assert(ret == 0);
+
+    /* initialize abt_io */
+    aid = abt_io_init(progress_pool);
+    assert(aid != NULL);
+
+    /* set up buffers */
+    num_buffers = buffer_per_thread ? concurrency : 1;
+    buffers = malloc(num_buffers*sizeof(*buffers));
+    assert(buffers);
+    for (i = 0; i < num_buffers; i++) {
+        ret = posix_memalign(&buffers[i], 4096, size);
+        assert(ret == 0);
+        memset(buffers[i], 0, size);
+    }
+
+    /* set up async contexts */
+    ops = calloc(concurrency, sizeof(*ops));
+    assert(ops);
+    wrets = malloc(concurrency * sizeof(*wrets));
+    assert(wrets);
+
+    /* start the benchmark */
+    start_time = wtime();
+
+    /* in the absence of a waitany, just going through one-by-one */
+    for(i = 0; ; i = (i+1) % concurrency)
+    {
+        if (ops[i] != NULL)
+        {
+            ret = abt_io_op_wait(ops[i]);
+            assert(ret == 0 && wrets[i] > 0 && (size_t)wrets[i] == size);
+            abt_io_op_free(ops[i]);
+        }
+
+        if (wtime() - start_time < duration)
+        {
+            ops[i] = abt_io_pwrite_nb(aid, fd, buffers[i*buffer_per_thread],
+                    size, next_offset, wrets+i);
+            assert(ops[i]);
+            next_offset += size;
+        }
+        else if (ops[i] == NULL)
+            break;
+        else
+            ops[i] = NULL;
+    }
+
+    end = wtime();
+
+    *seconds = end-start_time;
+    *ops_done = next_offset/size;
+
+    abt_io_finalize(aid);
+
+    /* wait on the ESs to complete (should already be by now, joining just in
+     * case...) */
+    for(i = 0; i < concurrency; i++)
+    {
+        ABT_xstream_join(progress_xstreams[i]);
+        ABT_xstream_free(&progress_xstreams[i]);
+    }
+
+    free(progress_xstreams);
+
+    for (i = 0; i < num_buffers; i++)
+        free(buffers[i]);
+    free(buffers);
+
+    free(wrets);
+
+    close(fd);
+    unlink(filename);
+
+    return;
+}
+
 static void pthread_bench(int buffer_per_thread, unsigned int concurrency, size_t size, double duration,
     const char *filename, unsigned int* ops_done, double *seconds)
 {
@@ -254,7 +373,7 @@ static void pthread_bench(int buffer_per_thread, unsigned int concurrency, size_
     off_t next_offset = 0;
     int ret;
     double end;
-    int i;
+    unsigned int i;
 
     arg.fd = open(filename, O_WRONLY|O_CREAT|O_DIRECT|O_SYNC, S_IWUSR|S_IRUSR);
     if(!arg.fd)
