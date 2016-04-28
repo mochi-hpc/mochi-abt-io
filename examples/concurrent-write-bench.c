@@ -158,8 +158,6 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
     int ret;
     double end;
     unsigned int i;
-    ABT_xstream *progress_xstreams;
-    ABT_pool progress_pool;
     ABT_xstream xstream;
     ABT_pool pool;
     abt_io_instance_id aid;
@@ -177,17 +175,6 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
     tid_array = malloc(concurrency * sizeof(*tid_array));
     assert(tid_array);
 
-    progress_xstreams = malloc(concurrency * sizeof(*progress_xstreams));
-    assert(progress_xstreams);
-
-    /* create a dedicated ES drive Mercury progress */
-    /* NOTE: for now we are going to use the same number of execution streams
-     * in the io pool as the desired level of issue concurrency, but this
-     * doesn't need to be the case in general.
-     */
-    ret = ABT_snoozer_xstream_create(concurrency, &progress_pool, progress_xstreams);
-    assert(ret == 0);
-
     /* retrieve current pool to use for ULT concurrency */
     ret = ABT_xstream_self(&xstream);
     assert(ret == 0);
@@ -195,7 +182,11 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
     assert(ret == 0);
 
     /* initialize abt_io */
-    aid = abt_io_init_pool(progress_pool);
+    /* NOTE: for now we are going to use the same number of execution streams
+     * in the io pool as the desired level of issue concurrency, but this
+     * doesn't need to be the case in general.
+     */
+    aid = abt_io_init(concurrency);
     assert(aid != NULL);
 
     ABT_mutex_create(&mutex);
@@ -256,16 +247,8 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
 
     abt_io_finalize(aid);
 
-    /* wait on the ESs to complete */
-    for(i=0; i<concurrency; i++)
-    {
-        ABT_xstream_join(progress_xstreams[i]);
-        ABT_xstream_free(&progress_xstreams[i]);
-    }
-
     ABT_mutex_free(&mutex);
     free(tid_array);
-    free(progress_xstreams);
 
     if(buffer_per_thread)
     {
@@ -291,8 +274,6 @@ static void abt_bench_nb(int buffer_per_thread, unsigned int concurrency, size_t
     int ret;
     double end;
     unsigned int i;
-    ABT_xstream *progress_xstreams;
-    ABT_pool progress_pool;
     abt_io_instance_id aid;
     void **buffers = NULL;
     unsigned int num_buffers = 0;
@@ -307,19 +288,12 @@ static void abt_bench_nb(int buffer_per_thread, unsigned int concurrency, size_t
         assert(0);
     }
 
-    progress_xstreams = malloc(concurrency * sizeof(*progress_xstreams));
-    assert(progress_xstreams);
-
-    /* create a dedicated ES drive Mercury progress */
+    /* initialize abt_io */
     /* NOTE: for now we are going to use the same number of execution streams
      * in the io pool as the desired level of issue concurrency, but this
      * doesn't need to be the case in general.
      */
-    ret = ABT_snoozer_xstream_create(concurrency, &progress_pool, progress_xstreams);
-    assert(ret == 0);
-
-    /* initialize abt_io */
-    aid = abt_io_init_pool(progress_pool);
+    aid = abt_io_init(concurrency);
     assert(aid != NULL);
 
     /* set up buffers */
@@ -370,16 +344,6 @@ static void abt_bench_nb(int buffer_per_thread, unsigned int concurrency, size_t
     *ops_done = next_offset/size;
 
     abt_io_finalize(aid);
-
-    /* wait on the ESs to complete (should already be by now, joining just in
-     * case...) */
-    for(i = 0; i < concurrency; i++)
-    {
-        ABT_xstream_join(progress_xstreams[i]);
-        ABT_xstream_free(&progress_xstreams[i]);
-    }
-
-    free(progress_xstreams);
 
     for (i = 0; i < num_buffers; i++)
         free(buffers[i]);
