@@ -195,7 +195,7 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
     assert(ret == 0);
 
     /* initialize abt_io */
-    aid = abt_io_init(progress_pool);
+    aid = abt_io_init_pool(progress_pool);
     assert(aid != NULL);
 
     ABT_mutex_create(&mutex);
@@ -319,7 +319,7 @@ static void abt_bench_nb(int buffer_per_thread, unsigned int concurrency, size_t
     assert(ret == 0);
 
     /* initialize abt_io */
-    aid = abt_io_init(progress_pool);
+    aid = abt_io_init_pool(progress_pool);
     assert(aid != NULL);
 
     /* set up buffers */

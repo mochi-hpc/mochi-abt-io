@@ -56,7 +56,6 @@ int main(int argc, char **argv)
     int compute_es_count = -1;
     struct worker_ult_arg *arg_array;
     struct worker_ult_common common;
-    int *done;
 
     if(argc != 10)
     {
@@ -125,7 +124,7 @@ int main(int argc, char **argv)
         }
 
         /* initialize abt_io */
-        common.aid = abt_io_init(io_pool);
+        common.aid = abt_io_init_pool(io_pool);
         assert(common.aid != NULL);
     }
 
@@ -214,7 +213,6 @@ static void worker_ult(void *_arg)
     size_t ret;
     char template[256];
     int fd;
-    int done = 0;
 
     if(common->opt_compute)
     {

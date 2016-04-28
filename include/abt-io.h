@@ -23,12 +23,24 @@ typedef struct abt_io_instance* abt_io_instance_id;
 struct abt_io_op;
 typedef struct abt_io_op abt_io_op_t;
 
+
 /**
- * Initializes abt_io library.
+ * Initializes abt_io library, using the specified number of backing threads. A
+ * count of zero currently indicates that concurrent I/O progress is not made
+ * unless control is passed to blocking abt-io calls (or other blocking calls
+ * w.r.t. argobots).
  * @param [in] progress_pool Argobots pool to drive I/O
  * @returns abt_io instance id on success, NULL upon error
  */
-abt_io_instance_id abt_io_init(ABT_pool progress_pool);
+abt_io_instance_id abt_io_init(int backing_thread_count);
+
+/**
+ * Initializes abt_io library using the specified Argobots pool for operation
+ * dispatch.
+ * @param [in] progress_pool Argobots pool to drive I/O
+ * @returns abt_io instance id on success, NULL upon error
+ */
+abt_io_instance_id abt_io_init_pool(ABT_pool progress_pool);
 
 /**
  * Shuts down abt_io library and its underlying resources

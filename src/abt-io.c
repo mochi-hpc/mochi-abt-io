@@ -23,8 +23,9 @@
 
 struct abt_io_instance
 {
-    /* provided by caller */
     ABT_pool progress_pool;
+    ABT_xstream *progress_xstreams;
+    int num_xstreams;
 };
 
 struct abt_io_op
@@ -34,23 +35,77 @@ struct abt_io_op
     void (*free_fn)(void*);
 };
 
-abt_io_instance_id abt_io_init(ABT_pool progress_pool)
+abt_io_instance_id abt_io_init(int backing_thread_count)
+{
+    struct abt_io_instance *aid;
+    ABT_pool pool;
+    ABT_xstream self_xstream;
+    ABT_xstream *progress_xstreams = NULL;
+    int ret;
+
+    if (backing_thread_count < 0) return NULL;
+
+    aid = malloc(sizeof(*aid));
+    if (aid == NULL) return ABT_IO_INSTANCE_NULL;
+
+    if (backing_thread_count == 0) {
+        aid->num_xstreams = 0;
+        ret = ABT_xstream_self(&self_xstream);
+        if (ret != ABT_SUCCESS) { free(aid); return ABT_IO_INSTANCE_NULL; }
+        ret = ABT_xstream_get_main_pools(self_xstream, 1, &pool);
+        if (ret != ABT_SUCCESS) { free(aid); return ABT_IO_INSTANCE_NULL; }
+    }
+    else {
+        aid->num_xstreams = backing_thread_count;
+        progress_xstreams = malloc(
+                backing_thread_count * sizeof(*progress_xstreams));
+        if (progress_xstreams == NULL) {
+            free(aid);
+            return ABT_IO_INSTANCE_NULL;
+        }
+        ret = ABT_snoozer_xstream_create(backing_thread_count, &pool,
+                progress_xstreams);
+        if (ret != ABT_SUCCESS) {
+            free(aid);
+            free(progress_xstreams);
+            return ABT_IO_INSTANCE_NULL;
+        }
+    }
+
+    aid->progress_pool = pool;
+    aid->progress_xstreams = progress_xstreams;
+
+    return aid;
+}
+
+abt_io_instance_id abt_io_init_pool(ABT_pool progress_pool)
 {
     struct abt_io_instance *aid;
 
     aid = malloc(sizeof(*aid));
     if(!aid) return(ABT_IO_INSTANCE_NULL);
-    memset(aid, 0, sizeof(*aid));
 
     aid->progress_pool = progress_pool;
+    aid->progress_xstreams = NULL;
+    aid->num_xstreams = 0;
 
     return aid;
 }
 
 void abt_io_finalize(abt_io_instance_id aid)
 {
+    int i;
+
+    if (aid->num_xstreams) {
+        for (i = 0; i < aid->num_xstreams; i++) {
+            ABT_xstream_join(aid->progress_xstreams[i]);
+            ABT_xstream_free(&aid->progress_xstreams[i]);
+        }
+        free(aid->progress_xstreams);
+        // pool gets implicitly freed
+    }
+
     free(aid);
-    return;
 }
 
 struct abt_io_open_state
