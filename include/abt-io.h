@@ -43,7 +43,9 @@ abt_io_instance_id abt_io_init(int backing_thread_count);
 abt_io_instance_id abt_io_init_pool(ABT_pool progress_pool);
 
 /**
- * Shuts down abt_io library and its underlying resources
+ * Shuts down abt_io library and its underlying resources. Waits for underlying
+ * operations to complete in the case abt_io_init was called, otherwise returns
+ * immediately.
  * @param [in] aid abt-io instance
  */
 void abt_io_finalize(abt_io_instance_id aid);
