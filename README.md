@@ -12,9 +12,7 @@ functions.
 
 Example configuration:
 
-    ../configure --prefix=/home/pcarns/working/install --enable-perf-opt \
-     --disable-thread-cancel --disable-task-cancel --disable-migration \
-     --enable-affinity
+    ../configure --prefix=/home/pcarns/working/install 
 
 ## Building abt-snoozer (dependency)
 
