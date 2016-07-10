@@ -47,6 +47,43 @@ LIBS="$ABT_SNOOZER_LIBS $LIBS"
 CPPFLAGS="$ABT_SNOOZER_CFLAGS $CPPFLAGS"
 CFLAGS="$ABT_SNOOZER_CFLAGS $CFLAGS"
 
+NONCOMPLIANT_IO=""
+
+AC_MSG_CHECKING([for O_DIRECT])
+AC_TRY_COMPILE([
+#define _GNU_SOURCE
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdlib.h>
+], [
+int fd = open(NULL, O_DIRECT);
+], 
+AC_MSG_RESULT(yes)
+AC_DEFINE([HAVE_ODIRECT], [], [Define if able to open files with O_DIRECT])
+,
+NONCOMPLIANT_IO=1
+AC_MSG_RESULT(no))
+
+AC_MSG_CHECKING([for mkostemp])
+AC_TRY_COMPILE([
+#define _GNU_SOURCE
+#include <stdlib.h>
+], [
+int fd = mkostemp(NULL, 0);
+], 
+AC_MSG_RESULT(yes)
+AC_DEFINE([HAVE_MKOSTEMP], [], [Define if mkostemp available])
+,
+NONCOMPLIANT_IO=1
+AC_MSG_RESULT(no))
+
 AC_CONFIG_FILES([Makefile maint/abt-io.pc])
 AC_OUTPUT
  
+if test "x$NONCOMPLIANT_IO" = "x1" ; then
+    AC_MSG_WARN([This platform lacks O_DIRECT and/or mkostemp().  All code
+    should still compile and pass make check tests, but behavior and
+    performance results in example programs may not match other platforms.])
+fi
