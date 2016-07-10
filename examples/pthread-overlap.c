@@ -134,7 +134,6 @@ static void *worker_pthread(void *_arg)
     size_t ret;
     char template[256];
     int fd;
-    int done = 0;
 
     if(common->opt_compute)
     {
