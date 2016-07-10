@@ -14,6 +14,12 @@
 #include <errno.h>
 #include <pthread.h>
 
+#include "abt-io-config.h"
+
+#ifndef HAVE_ODIRECT
+#define O_DIRECT 0
+#endif
+
 struct worker_pthread_common
 {
     int opt_io;
@@ -140,7 +146,11 @@ static void *worker_pthread(void *_arg)
 
     if(common->opt_io)
     {
+#ifdef HAVE_MKOSTEMP
         fd = mkostemp(template, O_DIRECT|O_SYNC);
+#else
+        fd = mkstemp(template);
+#endif
         if(fd < 0)
         {
             perror("mkostemp");

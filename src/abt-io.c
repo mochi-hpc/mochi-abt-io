@@ -297,7 +297,11 @@ static void abt_io_mkostemp_fn(void *foo)
 {
     struct abt_io_mkostemp_state *state = foo;
 
+#ifdef HAVE_MKOSTEMP
     *state->ret = mkostemp(state->template, state->flags);
+#else
+    *state->ret = mkstemp(state->template);
+#endif
     if(*state->ret < 0)
         *state->ret = -errno;
 

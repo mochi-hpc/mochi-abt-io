@@ -13,9 +13,14 @@
 #include <float.h>
 #include <errno.h>
 
+#include "abt-io-config.h"
 #include <abt.h>
 #include <abt-io.h>
 #include <abt-snoozer.h>
+
+#ifndef HAVE_ODIRECT
+#define O_DIRECT 0
+#endif
 
 /* This is a simple benchmark that measures the
  * streaming, concurrent, sequentially-issued write throughput for a 

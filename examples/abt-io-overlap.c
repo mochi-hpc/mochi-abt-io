@@ -13,9 +13,14 @@
 #include <openssl/rand.h>
 #include <errno.h>
 
+#include "abt-io-config.h"
 #include <abt.h>
 #include <abt-io.h>
 #include <abt-snoozer.h>
+
+#ifndef HAVE_ODIRECT
+#define O_DIRECT 0
+#endif
 
 struct worker_ult_common
 {
@@ -244,7 +249,11 @@ static void worker_ult(void *_arg)
         }
         else
         {
+#ifdef HAVE_MKOSTEMP
             fd = mkostemp(template, O_DIRECT|O_SYNC);
+#else
+            fd = mkstemp(template);
+#endif
             if(fd < 0)
             {
                 perror("mkostemp");
