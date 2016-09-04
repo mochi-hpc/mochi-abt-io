@@ -3,9 +3,7 @@ ACLOCAL_AMFLAGS = -I m4
 
 bin_PROGRAMS =
 bin_SCRIPTS =
-noinst_LIBRARIES =
 noinst_PROGRAMS =
-lib_LIBRARIES =
 noinst_HEADERS =
 TESTS =
 XFAIL_TESTS = 
@@ -28,8 +26,8 @@ AM_LIBS =
 
 AM_CXXFLAGS = $(AM_CFLAGS)
 
-lib_LIBRARIES += src/libabt-io.a
-src_libabt_io_a_SOURCES =
+lib_LTLIBRARIES = src/libabt-io.la
+src_libabt_io_la_SOURCES =
 
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = maint/abt-io.pc

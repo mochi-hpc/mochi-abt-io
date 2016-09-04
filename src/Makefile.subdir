@@ -1,2 +1,2 @@
-src_libabt_io_a_SOURCES += \
+src_libabt_io_la_SOURCES += \
  src/abt-io.c
