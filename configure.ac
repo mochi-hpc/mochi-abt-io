@@ -34,6 +34,9 @@ dnl
 dnl Verify pkg-config
 dnl
 PKG_PROG_PKG_CONFIG
+if test "x$PKG_CONFIG" == "x"; then
+   AC_MSG_ERROR([Could not find pkg-config utility!])
+fi
 
 PKG_CHECK_MODULES([ARGOBOTS],[argobots],[],
    [AC_MSG_ERROR([Could not find working argobots installation!])])
