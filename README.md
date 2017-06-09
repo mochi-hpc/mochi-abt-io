@@ -1,6 +1,9 @@
 # abt-io
-abt-io is a library that provides Argobots bindings to common POSIX I/O
-functions.
+abt-io is a library that provides Argobots-aware wrappers to common POSIX I/O
+functions.  The wrappers behave identically to their POSIX counterparts from
+a caller's point of view, but internally they delegate I/O system calls to a
+dedicated Argobots pool.  The caller is suspended until the system call
+completes so that other concurrent ULTs can make progress in the mean time.
 
 ##  Dependencies
 
