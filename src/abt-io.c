@@ -194,6 +194,98 @@ abt_io_op_t* abt_io_open_nb(abt_io_instance_id aid, const char* pathname, int fl
     else return op;
 }
 
+struct abt_io_pread_state
+{
+    ssize_t *ret;
+    int fd;
+    void *buf;
+    size_t count;
+    off_t offset;
+    ABT_eventual eventual;
+};
+
+static void abt_io_pread_fn(void *foo)
+{
+    struct abt_io_pread_state *state = foo;
+
+    *state->ret = pread(state->fd, state->buf, state->count, state->offset);
+    if(*state->ret < 0)
+        *state->ret = -errno;
+
+    ABT_eventual_set(state->eventual, NULL, 0);
+    return;
+}
+
+static int issue_pread(ABT_pool pool, abt_io_op_t *op, int fd, void *buf,
+        size_t count, off_t offset, ssize_t *ret)
+{
+    struct abt_io_pread_state state;
+    struct abt_io_pread_state *pstate = NULL;
+    int rc;
+
+    if (op == NULL) pstate = &state;
+    else
+    {
+        pstate = malloc(sizeof(*pstate));
+        if (pstate == NULL) { *ret = -ENOMEM; goto err; }
+    }
+
+    *ret = -ENOSYS;
+    pstate->ret = ret;
+    pstate->fd = fd;
+    pstate->buf = buf;
+    pstate->count = count;
+    pstate->offset = offset;
+    pstate->eventual = NULL;
+    rc = ABT_eventual_create(0, &pstate->eventual);
+    if (rc != ABT_SUCCESS) { *ret = -ENOMEM; goto err; }
+
+    if (op != NULL) op->e = pstate->eventual;
+
+    rc = ABT_task_create(pool, abt_io_pread_fn, pstate, NULL);
+    if(rc != ABT_SUCCESS) { *ret = -EINVAL; goto err; }
+
+    if (op == NULL) {
+        rc = ABT_eventual_wait(pstate->eventual, NULL);
+        // what error should we use here?
+        if (rc != ABT_SUCCESS) { *ret = -EINVAL; goto err; }
+    }
+    else {
+        op->e = pstate->eventual;
+        op->state = pstate;
+        op->free_fn = free;
+    }
+
+    return 0;
+err:
+    if (pstate->eventual != NULL) ABT_eventual_free(&pstate->eventual);
+    if (pstate != NULL && op != NULL) free(pstate);
+    return -1;
+}
+
+ssize_t abt_io_pread(abt_io_instance_id aid, int fd, void *buf, 
+        size_t count, off_t offset)
+{
+    ssize_t ret = -1;
+    issue_pread(aid->progress_pool, NULL, fd, buf, count, offset, &ret);
+    return ret;
+}
+
+abt_io_op_t* abt_io_pread_nb(abt_io_instance_id aid, int fd, void *buf,
+        size_t count, off_t offset, ssize_t *ret)
+{
+    abt_io_op_t *op;
+    int iret;
+
+    op = malloc(sizeof(*op));
+    if (op == NULL) return NULL;
+
+    iret = issue_pread(aid->progress_pool, op, fd, buf, count, offset, ret);
+    if (iret != 0) { free(op); return NULL; }
+    else return op;
+}
+
+
 struct abt_io_pwrite_state
 {
     ssize_t *ret;
