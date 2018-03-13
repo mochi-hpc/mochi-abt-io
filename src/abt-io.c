@@ -380,7 +380,7 @@ abt_io_op_t* abt_io_pwrite_nb(abt_io_instance_id aid, int fd, const void *buf,
 struct abt_io_mkostemp_state
 {
     int *ret;
-    char *template;
+    char *tpl;
     int flags;
     ABT_eventual eventual;
 };
@@ -390,9 +390,9 @@ static void abt_io_mkostemp_fn(void *foo)
     struct abt_io_mkostemp_state *state = foo;
 
 #ifdef HAVE_MKOSTEMP
-    *state->ret = mkostemp(state->template, state->flags);
+    *state->ret = mkostemp(state->tpl, state->flags);
 #else
-    *state->ret = mkstemp(state->template);
+    *state->ret = mkstemp(state->tpl);
 #endif
     if(*state->ret < 0)
         *state->ret = -errno;
@@ -401,7 +401,7 @@ static void abt_io_mkostemp_fn(void *foo)
     return;
 }
 
-static int issue_mkostemp(ABT_pool pool, abt_io_op_t *op, char* template, int flags, int *ret)
+static int issue_mkostemp(ABT_pool pool, abt_io_op_t *op, char* tpl, int flags, int *ret)
 {
     struct abt_io_mkostemp_state state;
     struct abt_io_mkostemp_state *pstate = NULL;
@@ -416,7 +416,7 @@ static int issue_mkostemp(ABT_pool pool, abt_io_op_t *op, char* template, int fl
 
     *ret = -ENOSYS;
     pstate->ret = ret;
-    pstate->template = template;
+    pstate->tpl = tpl;
     pstate->flags = flags;
     pstate->eventual = NULL;
     rc = ABT_eventual_create(0, &pstate->eventual);
@@ -445,14 +445,14 @@ err:
     return -1;
 }
 
-int abt_io_mkostemp(abt_io_instance_id aid, char *template, int flags)
+int abt_io_mkostemp(abt_io_instance_id aid, char *tpl, int flags)
 {
     int ret = -1;
-    issue_mkostemp(aid->progress_pool, NULL, template, flags, &ret);
+    issue_mkostemp(aid->progress_pool, NULL, tpl, flags, &ret);
     return ret;
 }
 
-abt_io_op_t* abt_io_mkostemp_nb(abt_io_instance_id aid, char *template, int flags, int *ret)
+abt_io_op_t* abt_io_mkostemp_nb(abt_io_instance_id aid, char *tpl, int flags, int *ret)
 {
     abt_io_op_t *op;
     int iret;
@@ -460,7 +460,7 @@ abt_io_op_t* abt_io_mkostemp_nb(abt_io_instance_id aid, char *template, int flag
     op = malloc(sizeof(*op));
     if (op == NULL) return NULL;
 
-    iret = issue_mkostemp(aid->progress_pool, op, template, flags, ret);
+    iret = issue_mkostemp(aid->progress_pool, op, tpl, flags, ret);
     if (iret != 0) { free(op); return NULL; }
     else return op;
 }

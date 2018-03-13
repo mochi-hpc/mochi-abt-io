@@ -114,14 +114,14 @@ abt_io_op_t* abt_io_pread_nb(
 /**
  * wrapper for mkostemp()
  */
-int abt_io_mkostemp(abt_io_instance_id aid, char *template, int flags);
+int abt_io_mkostemp(abt_io_instance_id aid, char *tpl, int flags);
 
 /**
  * non-blocking wrapper for mkostemp()
  */
 abt_io_op_t* abt_io_mkostemp_nb(
         abt_io_instance_id aid,
-        char *template,
+        char *tpl,
         int flags,
         int *ret);
 
