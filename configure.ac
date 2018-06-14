@@ -30,6 +30,12 @@ AC_REQUIRE_CPP
 
 AC_CHECK_SIZEOF([long int])
 
+AC_MSG_CHECKING([for openssl])
+AX_CHECK_OPENSSL(
+AC_MSG_RESULT(yes)
+,
+AC_MSG_ERROR([Could not find openssl]))
+
 dnl
 dnl Verify pkg-config
 dnl
