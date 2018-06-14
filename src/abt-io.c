@@ -17,7 +17,6 @@
 #include <fcntl.h>
 
 #include <abt.h>
-#include <abt-snoozer.h>
 
 #include "abt-io.h"
 
@@ -41,7 +40,9 @@ abt_io_instance_id abt_io_init(int backing_thread_count)
     ABT_pool pool;
     ABT_xstream self_xstream;
     ABT_xstream *progress_xstreams = NULL;
+    ABT_sched *progress_scheds = NULL;
     int ret;
+    int i;
 
     if (backing_thread_count < 0) return NULL;
 
@@ -63,12 +64,41 @@ abt_io_instance_id abt_io_init(int backing_thread_count)
             free(aid);
             return ABT_IO_INSTANCE_NULL;
         }
-        ret = ABT_snoozer_xstream_create(backing_thread_count, &pool,
-                progress_xstreams);
-        if (ret != ABT_SUCCESS) {
-            free(aid);
+        progress_scheds = malloc(
+                backing_thread_count * sizeof(*progress_scheds));
+        if (progress_scheds == NULL) {
             free(progress_xstreams);
+            free(aid);
             return ABT_IO_INSTANCE_NULL;
+        }
+
+        ret = ABT_pool_create_basic(ABT_POOL_FIFO_WAIT, ABT_POOL_ACCESS_MPMC, 
+            ABT_TRUE, &pool);
+        if(ret != ABT_SUCCESS)
+        {
+            free(progress_xstreams);
+            free(progress_scheds);
+            free(aid);
+            return ABT_IO_INSTANCE_NULL;
+        }
+
+        for(i=0; i<backing_thread_count; i++)
+        {
+            ret = ABT_sched_create_basic(ABT_SCHED_BASIC_WAIT, 1, &pool,
+               ABT_SCHED_CONFIG_NULL, &progress_scheds[i]);
+            if (ret != ABT_SUCCESS) {
+                free(progress_xstreams);
+                free(progress_scheds);
+                free(aid);
+                return ABT_IO_INSTANCE_NULL;
+            }
+            ret = ABT_xstream_create(progress_scheds[i], &progress_xstreams[i]);
+            if (ret != ABT_SUCCESS) {
+                free(progress_xstreams);
+                free(progress_scheds);
+                free(aid);
+                return ABT_IO_INSTANCE_NULL;
+            }
         }
     }
 

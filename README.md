@@ -21,17 +21,12 @@ Margo: https://xgitlab.cels.anl.gov/sds/margo
 
 * argobots (origin/master):
   (git://git.mcs.anl.gov/argo/argobots.git)
-* abt-snoozer (https://xgitlab.cels.anl.gov/sds/abt-snoozer)
 
 ## Building Argobots (dependency)
 
 Example configuration:
 
     ../configure --prefix=/home/pcarns/working/install 
-
-## Building abt-snoozer (dependency)
-
-See abt-snoozer README.md
 
 ## Building
 
@@ -67,6 +62,3 @@ system with a level of concurrency determined by the number of execution
 streams in the abt-io pool.  This is similar to aio functionality but with a
 simpler interface and less serialization.
 
-The abt-snoozer scheduler is not manditory, but is highly recommended
-because it will enable the Argobots scheduler to idle gracefully when it is
-idle or blocked on I/O operations.

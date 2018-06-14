@@ -16,7 +16,6 @@
 #include "abt-io-config.h"
 #include <abt.h>
 #include <abt-io.h>
-#include <abt-snoozer.h>
 
 #ifndef HAVE_ODIRECT
 #define O_DIRECT 0
@@ -77,13 +76,19 @@ int main(int argc, char **argv)
     unsigned int concurrency;
     double duration;
     int buffer_per_thread = 0;
+    ABT_sched self_sched;
+    ABT_xstream self_xstream;
 
     ABT_init(argc, argv);
 
-    /* set primary ES to idle without polling */
-    ret = ABT_snoozer_xstream_self_set();
-    assert(ret == 0);
-
+    /* set caller (self) ES to sleep when idle by using SCHED_BASIC_WAIT */
+    ret = ABT_sched_create_basic(ABT_SCHED_BASIC_WAIT, 0, NULL,
+        ABT_SCHED_CONFIG_NULL, &self_sched);
+    assert(ret == ABT_SUCCESS);
+    ret = ABT_xstream_self(&self_xstream);
+    assert(ret == ABT_SUCCESS);
+    ret = ABT_xstream_set_main_sched(self_xstream, self_sched);
+    assert(ret == ABT_SUCCESS);
 
     if(argc != 6)
     {
