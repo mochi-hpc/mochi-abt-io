@@ -7,6 +7,6 @@ Name: abt-io
 Description: Argobots bindings for common POSIX I/O functions
 Version: 0.1
 URL: https://xgitlab.cels.anl.gov/sds/abt-io
-Requires: abt-snoozer argobots
+Requires: argobots
 Libs: -L${libdir} -labt-io
 Cflags: -I${includedir}
