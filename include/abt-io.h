@@ -91,6 +91,25 @@ abt_io_op_t* abt_io_pwrite_nb(
         ssize_t *ret);
 
 /**
+ * wrapper for write()
+ */
+ssize_t abt_io_write(
+        abt_io_instance_id aid,
+        int fd,
+        const void *buf,
+        size_t count);
+
+/**
+ * non-blocking wrapper for write()
+ */
+abt_io_op_t* abt_io_write_nb(
+        abt_io_instance_id aid,
+        int fd,
+        const void *buf,
+        size_t count,
+        ssize_t *ret);
+
+/**
  * wrapper for pread()
  */
 ssize_t abt_io_pread(
@@ -109,6 +128,25 @@ abt_io_op_t* abt_io_pread_nb(
         void *buf,
         size_t count,
         off_t offset,
+        ssize_t *ret);
+
+/**
+ * wrapper for read()
+ */
+ssize_t abt_io_read(
+        abt_io_instance_id aid,
+        int fd,
+        void *buf,
+        size_t count);
+
+/**
+ * non-blocking wrapper for read()
+ */
+abt_io_op_t* abt_io_read_nb(
+        abt_io_instance_id aid,
+        int fd,
+        void *buf,
+        size_t count,
         ssize_t *ret);
 
 /**
