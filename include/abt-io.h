@@ -177,6 +177,16 @@ abt_io_op_t* abt_io_unlink_nb(
         int *ret);
 
 /**
+ * wrapper for fdatasync()
+ */
+int abt_io_fdatasync(abt_io_instance_id aid, int fd);
+
+/**
+ * non-blocking wrapper for fdatasync()
+ */
+abt_io_op_t* abt_io_fdatasync_nb(abt_io_instance_id aid, int fd, int *ret);
+
+/**
  * wrapper for close()
  */
 int abt_io_close(abt_io_instance_id aid, int fd);

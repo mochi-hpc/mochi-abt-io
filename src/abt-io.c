@@ -834,6 +834,87 @@ abt_io_op_t* abt_io_close_nb(abt_io_instance_id aid, int fd, int *ret)
     else return op;
 }
 
+struct abt_io_fdatasync_state
+{
+    int *ret;
+    int fd;
+    ABT_eventual eventual;
+};
+
+static void abt_io_fdatasync_fn(void *foo)
+{
+    struct abt_io_fdatasync_state *state = foo;
+
+    *state->ret = fdatasync(state->fd);
+    if(*state->ret < 0)
+        *state->ret = -errno;
+
+    ABT_eventual_set(state->eventual, NULL, 0);
+    return;
+}
+
+static int issue_fdatasync(ABT_pool pool, abt_io_op_t *op, int fd, int *ret)
+{
+    struct abt_io_fdatasync_state state;
+    struct abt_io_fdatasync_state *pstate = NULL;
+    int rc;
+
+    if (op == NULL) pstate = &state;
+    else {
+        pstate = malloc(sizeof(*pstate));
+        if (pstate == NULL) { *ret = -ENOMEM; goto err; }
+    }
+
+    *ret = -ENOSYS;
+    pstate->ret = ret;
+    pstate->fd = fd;
+    pstate->eventual = NULL;
+    rc = ABT_eventual_create(0, &pstate->eventual);
+    if (rc != ABT_SUCCESS) { *ret = -ENOMEM; goto err; }
+
+    if (op != NULL) op->e = pstate->eventual;
+
+    rc = ABT_task_create(pool, abt_io_fdatasync_fn, pstate, NULL);
+    if(rc != ABT_SUCCESS) { *ret = -EINVAL; goto err; }
+
+    if (op == NULL) {
+        rc = ABT_eventual_wait(pstate->eventual, NULL);
+        // what error should we use here?
+        if (rc != ABT_SUCCESS) { *ret = -EINVAL; goto err; }
+    }
+    else {
+        op->e = pstate->eventual;
+        op->state = pstate;
+        op->free_fn = free;
+    }
+
+    return 0;
+err:
+    if (pstate->eventual != NULL) ABT_eventual_free(&pstate->eventual);
+    if (pstate != NULL && op != NULL) free(pstate);
+    return -1;
+}
+
+int abt_io_fdatasync(abt_io_instance_id aid, int fd)
+{
+    int ret = -1;
+    issue_fdatasync(aid->progress_pool, NULL, fd, &ret);
+    return ret;
+}
+
+abt_io_op_t* abt_io_fdatasync_nb(abt_io_instance_id aid, int fd, int *ret)
+{
+    abt_io_op_t *op;
+    int iret;
+
+    op = malloc(sizeof(*op));
+    if (op == NULL) return NULL;
+
+    iret = issue_fdatasync(aid->progress_pool, op, fd, ret);
+    if (iret != 0) { free(op); return NULL; }
+    else return op;
+}
+
 int abt_io_op_wait(abt_io_op_t* op)
 {
     int ret;
