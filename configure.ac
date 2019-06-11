@@ -50,6 +50,18 @@ LIBS="$ARGOBOTS_LIBS $LIBS"
 CPPFLAGS="$ARGOBOTS_CFLAGS $CPPFLAGS"
 CFLAGS="$ARGOBOTS_CFLAGS $CFLAGS"
 
+AC_MSG_CHECKING([for fallocate])
+AC_TRY_COMPILE([
+#define _GNU_SOURCE
+#include <fcntl.h>
+], [
+int ret = fallocate(0, 0, 0, 0);
+],
+AC_MSG_RESULT(yes)
+AC_DEFINE([HAVE_FALLOCATE], [], [Define if fallocate available])
+,
+AC_MSG_RESULT(no))
+
 NONCOMPLIANT_IO=""
 
 AC_MSG_CHECKING([for O_DIRECT])

@@ -5,6 +5,8 @@
  * See COPYRIGHT in top-level directory.
  */
 
+#include "abt-io-config.h"
+
 #define _GNU_SOURCE
 
 #include <assert.h>
@@ -17,7 +19,6 @@
 #include <fcntl.h>
 
 #include <abt.h>
-
 #include "abt-io.h"
 
 struct abt_io_instance
@@ -911,6 +912,97 @@ abt_io_op_t* abt_io_fdatasync_nb(abt_io_instance_id aid, int fd, int *ret)
     if (op == NULL) return NULL;
 
     iret = issue_fdatasync(aid->progress_pool, op, fd, ret);
+    if (iret != 0) { free(op); return NULL; }
+    else return op;
+}
+
+struct abt_io_fallocate_state
+{
+    int *ret;
+    int fd;
+    int mode;
+    off_t offset;
+    off_t len;
+    ABT_eventual eventual;
+};
+
+static void abt_io_fallocate_fn(void *foo)
+{
+    struct abt_io_fallocate_state *state = foo;
+
+#ifdef HAVE_FALLOCATE
+    *state->ret = fallocate(state->fd, state->mode, state->offset, state->len);
+    if(*state->ret < 0)
+        *state->ret = -errno;
+#else
+    *state->ret = -ENOSYS;
+#endif
+
+    ABT_eventual_set(state->eventual, NULL, 0);
+    return;
+}
+
+static int issue_fallocate(ABT_pool pool, abt_io_op_t *op, int fd, int mode, off_t offset, off_t len, int *ret)
+{
+    struct abt_io_fallocate_state state;
+    struct abt_io_fallocate_state *pstate = NULL;
+    int rc;
+
+    if (op == NULL) pstate = &state;
+    else {
+        pstate = malloc(sizeof(*pstate));
+        if (pstate == NULL) { *ret = -ENOMEM; goto err; }
+    }
+
+    *ret = -ENOSYS;
+    pstate->ret = ret;
+    pstate->fd = fd;
+    pstate->mode = mode;
+    pstate->offset = offset;
+    pstate->len = len;
+    pstate->eventual = NULL;
+    rc = ABT_eventual_create(0, &pstate->eventual);
+    if (rc != ABT_SUCCESS) { *ret = -ENOMEM; goto err; }
+
+    if (op != NULL) op->e = pstate->eventual;
+
+    rc = ABT_task_create(pool, abt_io_fallocate_fn, pstate, NULL);
+    if(rc != ABT_SUCCESS) { *ret = -EINVAL; goto err; }
+
+    if (op == NULL) {
+        rc = ABT_eventual_wait(pstate->eventual, NULL);
+        // what error should we use here?
+        if (rc != ABT_SUCCESS) { *ret = -EINVAL; goto err; }
+    }
+    else {
+        op->e = pstate->eventual;
+        op->state = pstate;
+        op->free_fn = free;
+    }
+
+    return 0;
+err:
+    if (pstate->eventual != NULL) ABT_eventual_free(&pstate->eventual);
+    if (pstate != NULL && op != NULL) free(pstate);
+    return -1;
+}
+
+int abt_io_fallocate(abt_io_instance_id aid, int fd, int mode, off_t offset, off_t len)
+{
+    int ret = -1;
+    issue_fallocate(aid->progress_pool, NULL, fd, mode, offset, len, &ret);
+    return ret;
+}
+
+abt_io_op_t* abt_io_fallocate_nb(abt_io_instance_id aid, int fd, int mode, off_t offset, off_t len, int *ret)
+{
+    abt_io_op_t *op;
+    int iret;
+
+    op = malloc(sizeof(*op));
+    if (op == NULL) return NULL;
+
+    iret = issue_fallocate(aid->progress_pool, op, fd, mode, offset, len, ret);
     if (iret != 0) { free(op); return NULL; }
     else return op;
 }

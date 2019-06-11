@@ -197,6 +197,16 @@ int abt_io_close(abt_io_instance_id aid, int fd);
 abt_io_op_t* abt_io_close_nb(abt_io_instance_id aid, int fd, int *ret);
 
 /**
+ * wrapper for fallocate() (if available on this platform)
+ */
+int abt_io_fallocate(abt_io_instance_id aid, int fd, int mode, off_t offset, off_t len);
+
+/**
+ * non-blocking wrapper for fallocate() (if available on this platform)
+ */
+abt_io_op_t* abt_io_fallocate_nb(abt_io_instance_id aid, int fd, int mode, off_t offset, off_t len, int *ret);
+
+/**
  * wait on an abt-io operation
  * return: 0 if success, non-zero on failure
  */
