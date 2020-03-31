@@ -1021,3 +1021,14 @@ void abt_io_op_free(abt_io_op_t* op)
     op->free_fn(op->state);
     free(op);
 }
+
+size_t abt_io_get_pending_op_count(abt_io_instance_id aid)
+{
+    size_t size;
+    int ret;
+    ret = ABT_pool_get_size(aid->progress_pool, &size);
+    if (ret == ABT_SUCCESS)
+        return size;
+    else
+        return -1;
+}
