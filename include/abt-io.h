@@ -218,6 +218,11 @@ int abt_io_op_wait(abt_io_op_t* op);
  */
 void abt_io_op_free(abt_io_op_t* op);
 
+/**
+ * enquire about status of underlying Argobots pool
+ */
+size_t abt_io_get_pool_size(abt_io_instance_id aid);
+
 #ifdef __cplusplus
 }
 #endif
