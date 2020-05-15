@@ -175,7 +175,7 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
     void *buffer;
     double start;
 
-    fd = open(filename, O_WRONLY|O_CREAT|O_SYNC, S_IWUSR|S_IRUSR);
+    fd = open(filename, O_WRONLY|O_CREAT|O_SYNC|O_DIRECT, S_IWUSR|S_IRUSR);
     if(!fd)
     {
         perror("open");
