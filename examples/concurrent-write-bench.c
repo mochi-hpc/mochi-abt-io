@@ -173,25 +173,32 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
     ABT_xstream xstream;
     ABT_pool pool;
     abt_io_instance_id aid;
-    int fd;
+    int *fd_array;
+    char tmp_filename[256] = {0};
     void *buffer;
     double start;
 
-    fd = open(filename, OFLAGS, S_IWUSR|S_IRUSR);
-    if(!fd)
-    {
-        perror("open");
-        assert(0);
-    }
-    ret = fallocate(fd, 0, 0, 10737418240UL);
-    assert(ret == 0);
-    ret = posix_fadvise(fd, 0, 10737418240UL, POSIX_FADV_DONTNEED);
-    assert(ret == 0);
-    ret = posix_fadvise(fd, 0, 10737418240UL, POSIX_FADV_SEQUENTIAL);
-    assert(ret == 0);
-
     tid_array = malloc(concurrency * sizeof(*tid_array));
     assert(tid_array);
+    fd_array = malloc(concurrency * sizeof(*fd_array));
+    assert(fd_array);
+
+    for(i=0; i<concurrency; i++)
+    {
+        sprintf(tmp_filename, "%s.%d", filename, i);
+        fd_array[i] = open(tmp_filename, OFLAGS, S_IWUSR|S_IRUSR);
+        if(fd_array[i] < 0)
+        {
+            perror("open");
+            assert(0);
+        }
+        ret = fallocate(fd_array[i], 0, 0, 10737418240UL);
+        assert(ret == 0);
+        ret = posix_fadvise(fd_array[i], 0, 10737418240UL, POSIX_FADV_DONTNEED);
+        assert(ret == 0);
+        ret = posix_fadvise(fd_array[i], 0, 10737418240UL, POSIX_FADV_SEQUENTIAL);
+        assert(ret == 0);
+    }
 
     /* retrieve current pool to use for ULT concurrency */
     ret = ABT_xstream_self(&xstream);
@@ -224,7 +231,7 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
         args[i].next_offset = &next_offset;
         args[i].duration = duration;
         args[i].aid = aid;
-        args[i].fd = fd;
+        args[i].fd = fd_array[i];
         if (buffer == NULL)
         {
             ret = posix_memalign(&args[i].buffer, 4096, size);
@@ -274,8 +281,14 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
 
     free(args);
 
-    close(fd);
-    unlink(filename);
+    for(i=0; i<concurrency; i++)
+        close(fd_array[i]);
+    for(i=0; i<concurrency; i++)
+    {
+        sprintf(tmp_filename, "%s.%d", filename, i);
+        unlink(tmp_filename);
+
+    }
 
     return;
 }
