@@ -170,20 +170,29 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
     unsigned int i;
     ABT_xstream xstream;
     ABT_pool pool;
-    abt_io_instance_id aid;
-    int fd;
+    abt_io_instance_id *aid_array;
+    int *fd_array;
+    char tmp_filename[256] = {0};
     void *buffer;
     double start;
 
-    fd = open(filename, O_WRONLY|O_CREAT|O_SYNC|O_DIRECT, S_IWUSR|S_IRUSR);
-    if(!fd)
-    {
-        perror("open");
-        assert(0);
-    }
-
     tid_array = malloc(concurrency * sizeof(*tid_array));
     assert(tid_array);
+    fd_array = malloc(concurrency * sizeof(*fd_array));
+    assert(fd_array);
+    aid_array = malloc(concurrency * sizeof(*aid_array));
+    assert(aid_array);
+
+    for(i=0; i<concurrency; i++)
+    {
+        sprintf(tmp_filename, "%s.%d", filename, i);
+        fd_array[i] = open(tmp_filename, O_WRONLY|O_CREAT|O_SYNC|O_DIRECT, S_IWUSR|S_IRUSR);
+        if(fd_array[i] < 0)
+        {
+            perror("open");
+            assert(0);
+        }
+    }
 
     /* retrieve current pool to use for ULT concurrency */
     ret = ABT_xstream_self(&xstream);
@@ -192,12 +201,11 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
     assert(ret == 0);
 
     /* initialize abt_io */
-    /* NOTE: for now we are going to use the same number of execution streams
-     * in the io pool as the desired level of issue concurrency, but this
-     * doesn't need to be the case in general.
-     */
-    aid = abt_io_init(concurrency);
-    assert(aid != NULL);
+    for(i=0; i<concurrency; i++)
+    {
+        aid_array[i] = abt_io_init(1);
+        assert(aid_array[i] != NULL);
+    }
 
     ABT_mutex_create(&mutex);
 
@@ -219,8 +227,8 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
         args[i].size = size;
         args[i].next_offset = &next_offset;
         args[i].duration = duration;
-        args[i].aid = aid;
-        args[i].fd = fd;
+        args[i].aid = aid_array[i];
+        args[i].fd = fd_array[i];
         if (buffer == NULL)
         {
             ret = posix_memalign(&args[i].buffer, 4096, size);
@@ -255,7 +263,8 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
     *seconds = end-start;
     *ops_done = next_offset/size;
 
-    abt_io_finalize(aid);
+    for(i=0; i<concurrency; i++)
+        abt_io_finalize(aid_array[i]);
 
     ABT_mutex_free(&mutex);
     free(tid_array);
@@ -270,8 +279,14 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
 
     free(args);
 
-    close(fd);
-    unlink(filename);
+    for(i=0; i<concurrency; i++)
+        close(fd_array[i]);
+    for(i=0; i<concurrency; i++)
+    {
+        sprintf(tmp_filename, "%s.%d", filename, i);
+        unlink(tmp_filename);
+
+    }
 
     return;
 }
