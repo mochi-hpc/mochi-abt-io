@@ -21,6 +21,8 @@
 #define O_DIRECT 0
 #endif
 
+#define OFLAGS (O_WRONLY|O_CREAT|O_DIRECT|O_SYNC)
+
 /* This is a simple benchmark that measures the
  * streaming, concurrent, sequentially-issued write throughput for a 
  * specified number of concurrent operations.  It includes an abt-io version and
@@ -175,7 +177,7 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
     void *buffer;
     double start;
 
-    fd = open(filename, O_WRONLY|O_CREAT|O_SYNC|O_DIRECT, S_IWUSR|S_IRUSR);
+    fd = open(filename, OFLAGS, S_IWUSR|S_IRUSR);
     if(!fd)
     {
         perror("open");
@@ -291,7 +293,7 @@ static void abt_bench_nb(int buffer_per_thread, unsigned int concurrency, size_t
     abt_io_op_t **ops;
     ssize_t *wrets;
 
-    fd = open(filename, O_WRONLY|O_CREAT|O_SYNC, S_IWUSR|S_IRUSR);
+    fd = open(filename, OFLAGS, S_IWUSR|S_IRUSR);
     if(!fd)
     {
         perror("open");
@@ -381,7 +383,7 @@ static void pthread_bench(int buffer_per_thread, unsigned int concurrency, size_
     void *buffer;
     double start;
 
-    fd = open(filename, O_WRONLY|O_CREAT|O_SYNC, S_IWUSR|S_IRUSR);
+    fd = open(filename, OFLAGS, S_IWUSR|S_IRUSR);
     if(!fd)
     {
         perror("open");
