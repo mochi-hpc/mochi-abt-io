@@ -53,7 +53,7 @@ abt_io_instance_id abt_io_init(int backing_thread_count)
 
     if (backing_thread_count < 0) return NULL;
 
-    aid = malloc(sizeof(*aid));
+    aid = calloc(1, sizeof(*aid));
     if (aid == NULL) return ABT_IO_INSTANCE_NULL;
 
     ret = io_setup(1024, &aid->ioc);
