@@ -183,6 +183,8 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
         perror("open");
         assert(0);
     }
+    ret = fallocate(fd, 0, 0, 10737418240UL);
+    assert(ret == 0);
 
     tid_array = malloc(concurrency * sizeof(*tid_array));
     assert(tid_array);
@@ -299,6 +301,8 @@ static void abt_bench_nb(int buffer_per_thread, unsigned int concurrency, size_t
         perror("open");
         assert(0);
     }
+    ret = fallocate(fd, 0, 0, 10737418240UL);
+    assert(ret == 0);
 
     /* initialize abt_io */
     /* NOTE: for now we are going to use the same number of execution streams
@@ -389,6 +393,8 @@ static void pthread_bench(int buffer_per_thread, unsigned int concurrency, size_
         perror("open");
         assert(0);
     }
+    ret = fallocate(fd, 0, 0, 10737418240UL);
+    assert(ret == 0);
 
     id_array = malloc(concurrency * sizeof(*id_array));
     assert(id_array);
