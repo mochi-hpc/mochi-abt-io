@@ -196,7 +196,8 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
      * in the io pool as the desired level of issue concurrency, but this
      * doesn't need to be the case in general.
      */
-    aid = abt_io_init(concurrency);
+    /* for libaio we only need one thread (the waiter) */
+    aid = abt_io_init(1);
     assert(aid != NULL);
 
     ABT_mutex_create(&mutex);

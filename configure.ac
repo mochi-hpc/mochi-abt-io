@@ -94,6 +94,13 @@ AC_DEFINE([HAVE_MKOSTEMP], [], [Define if mkostemp available])
 NONCOMPLIANT_IO=1
 AC_MSG_RESULT(no))
 
+AIO_LIBS=
+AC_CHECK_HEADER([libaio.h], [
+    AC_SUBST([AIO_LIBS], ["-laio"])
+    AC_DEFINE([HAVE_LIBAIO], 1, [Define if you have libaio])
+], [ ])
+LIBS="$AIO_LIBS $LIBS"
+
 AC_CONFIG_FILES([Makefile maint/abt-io.pc])
 AC_OUTPUT
  
