@@ -21,7 +21,7 @@
 #define O_DIRECT 0
 #endif
 
-#define OFLAGS (O_WRONLY|O_CREAT|O_DIRECT)
+#define OFLAGS (O_WRONLY|O_CREAT|O_DIRECT|O_SYNC)
 
 /* This is a simple benchmark that measures the
  * streaming, concurrent, sequentially-issued write throughput for a 
