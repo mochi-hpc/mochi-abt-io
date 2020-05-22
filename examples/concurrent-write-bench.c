@@ -21,6 +21,8 @@
 #define O_DIRECT 0
 #endif
 
+#define OFLAGS (O_WRONLY|O_CREAT|O_DIRECT)
+
 /* This is a simple benchmark that measures the
  * streaming, concurrent, sequentially-issued write throughput for a 
  * specified number of concurrent operations.  It includes an abt-io version and
@@ -175,12 +177,14 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
     void *buffer;
     double start;
 
-    fd = open(filename, O_WRONLY|O_CREAT|O_SYNC|O_DIRECT, S_IWUSR|S_IRUSR);
+    fd = open(filename, OFLAGS, S_IWUSR|S_IRUSR);
     if(!fd)
     {
         perror("open");
         assert(0);
     }
+    ret = fallocate(fd, 0, 0, 10737418240UL);
+    assert(ret == 0);
 
     tid_array = malloc(concurrency * sizeof(*tid_array));
     assert(tid_array);
@@ -292,12 +296,14 @@ static void abt_bench_nb(int buffer_per_thread, unsigned int concurrency, size_t
     abt_io_op_t **ops;
     ssize_t *wrets;
 
-    fd = open(filename, O_WRONLY|O_CREAT|O_SYNC, S_IWUSR|S_IRUSR);
+    fd = open(filename, OFLAGS, S_IWUSR|S_IRUSR);
     if(!fd)
     {
         perror("open");
         assert(0);
     }
+    ret = fallocate(fd, 0, 0, 10737418240UL);
+    assert(ret == 0);
 
     /* initialize abt_io */
     /* NOTE: for now we are going to use the same number of execution streams
@@ -382,12 +388,14 @@ static void pthread_bench(int buffer_per_thread, unsigned int concurrency, size_
     void *buffer;
     double start;
 
-    fd = open(filename, O_WRONLY|O_CREAT|O_SYNC, S_IWUSR|S_IRUSR);
+    fd = open(filename, OFLAGS, S_IWUSR|S_IRUSR);
     if(!fd)
     {
         perror("open");
         assert(0);
     }
+    ret = fallocate(fd, 0, 0, 10737418240UL);
+    assert(ret == 0);
 
     id_array = malloc(concurrency * sizeof(*id_array));
     assert(id_array);
