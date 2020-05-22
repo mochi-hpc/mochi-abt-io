@@ -470,7 +470,7 @@ static int issue_pwrite(struct abt_io_instance *aid, ABT_pool pool, abt_io_op_t 
     pstate->offset = offset;
     pstate->eventual = NULL;
     io_prep_pwrite(&pstate->cb, fd, (void*)buf, count, offset);
-    pstate->cb.data = &pstate;
+    pstate->cb.data = pstate;
 
     rc = ABT_eventual_create(0, &pstate->eventual);
     if (rc != ABT_SUCCESS) { *ret = -ENOMEM; goto err; }
@@ -1083,6 +1083,7 @@ static void libaio_waiter(void *foo)
         {
             assert(events[i].res >= 0);
             pstate = events[i].data;
+            *pstate->ret = events[i].res;
             ABT_eventual_set(pstate->eventual, NULL, 0);
         }
     }
