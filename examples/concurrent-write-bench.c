@@ -200,12 +200,7 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
     assert(ret == 0);
 
     /* initialize abt_io */
-    /* NOTE: for now we are going to use the same number of execution streams
-     * in the io pool as the desired level of issue concurrency, but this
-     * doesn't need to be the case in general.
-     */
-    /* for libaio we only need one thread (the waiter) */
-    aid = abt_io_init(1);
+    aid = abt_io_init(0);
     assert(aid != NULL);
 
     ABT_mutex_create(&mutex);
@@ -314,11 +309,7 @@ static void abt_bench_nb(int buffer_per_thread, unsigned int concurrency, size_t
     assert(ret == 0);
 
     /* initialize abt_io */
-    /* NOTE: for now we are going to use the same number of execution streams
-     * in the io pool as the desired level of issue concurrency, but this
-     * doesn't need to be the case in general.
-     */
-    aid = abt_io_init(concurrency);
+    aid = abt_io_init(0);
     assert(aid != NULL);
 
     /* set up buffers */
