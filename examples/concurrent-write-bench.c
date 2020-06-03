@@ -194,10 +194,12 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
         }
         ret = fallocate(fd_array[i], 0, 0, 10737418240UL);
         assert(ret == 0);
+#if 0
         ret = posix_fadvise(fd_array[i], 0, 10737418240UL, POSIX_FADV_DONTNEED);
         assert(ret == 0);
         ret = posix_fadvise(fd_array[i], 0, 10737418240UL, POSIX_FADV_SEQUENTIAL);
         assert(ret == 0);
+#endif
     }
 
     /* retrieve current pool to use for ULT concurrency */
@@ -316,10 +318,12 @@ static void abt_bench_nb(int buffer_per_thread, unsigned int concurrency, size_t
     }
     ret = fallocate(fd, 0, 0, 10737418240UL);
     assert(ret == 0);
+#if 0
     ret = posix_fadvise(fd, 0, 10737418240UL, POSIX_FADV_DONTNEED);
     assert(ret == 0);
     ret = posix_fadvise(fd, 0, 10737418240UL, POSIX_FADV_SEQUENTIAL);
     assert(ret == 0);
+#endif
 
     /* initialize abt_io */
     aid = abt_io_init(0);
@@ -408,10 +412,12 @@ static void pthread_bench(int buffer_per_thread, unsigned int concurrency, size_
     }
     ret = fallocate(fd, 0, 0, 10737418240UL);
     assert(ret == 0);
+#if 0
     ret = posix_fadvise(fd, 0, 10737418240UL, POSIX_FADV_DONTNEED);
     assert(ret == 0);
     ret = posix_fadvise(fd, 0, 10737418240UL, POSIX_FADV_SEQUENTIAL);
     assert(ret == 0);
+#endif
 
     id_array = malloc(concurrency * sizeof(*id_array));
     assert(id_array);
