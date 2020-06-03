@@ -21,6 +21,8 @@
 #define O_DIRECT 0
 #endif
 
+#define OFLAGS (O_WRONLY|O_CREAT|O_DIRECT|O_SYNC)
+
 /* This is a simple benchmark that measures the
  * streaming, concurrent, sequentially-issued write throughput for a 
  * specified number of concurrent operations.  It includes an abt-io version and
@@ -170,7 +172,7 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
     unsigned int i;
     ABT_xstream xstream;
     ABT_pool pool;
-    abt_io_instance_id *aid_array;
+    abt_io_instance_id aid;
     int *fd_array;
     char tmp_filename[256] = {0};
     void *buffer;
@@ -180,18 +182,22 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
     assert(tid_array);
     fd_array = malloc(concurrency * sizeof(*fd_array));
     assert(fd_array);
-    aid_array = malloc(concurrency * sizeof(*aid_array));
-    assert(aid_array);
 
     for(i=0; i<concurrency; i++)
     {
         sprintf(tmp_filename, "%s.%d", filename, i);
-        fd_array[i] = open(tmp_filename, O_WRONLY|O_CREAT|O_SYNC|O_DIRECT, S_IWUSR|S_IRUSR);
+        fd_array[i] = open(tmp_filename, OFLAGS, S_IWUSR|S_IRUSR);
         if(fd_array[i] < 0)
         {
             perror("open");
             assert(0);
         }
+        ret = fallocate(fd_array[i], 0, 0, 10737418240UL);
+        assert(ret == 0);
+        ret = posix_fadvise(fd_array[i], 0, 10737418240UL, POSIX_FADV_DONTNEED);
+        assert(ret == 0);
+        ret = posix_fadvise(fd_array[i], 0, 10737418240UL, POSIX_FADV_SEQUENTIAL);
+        assert(ret == 0);
     }
 
     /* retrieve current pool to use for ULT concurrency */
@@ -201,11 +207,8 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
     assert(ret == 0);
 
     /* initialize abt_io */
-    for(i=0; i<concurrency; i++)
-    {
-        aid_array[i] = abt_io_init(1);
-        assert(aid_array[i] != NULL);
-    }
+    aid = abt_io_init(concurrency);
+    assert(aid != NULL);
 
     ABT_mutex_create(&mutex);
 
@@ -227,7 +230,7 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
         args[i].size = size;
         args[i].next_offset = &next_offset;
         args[i].duration = duration;
-        args[i].aid = aid_array[i];
+        args[i].aid = aid;
         args[i].fd = fd_array[i];
         if (buffer == NULL)
         {
@@ -263,8 +266,7 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
     *seconds = end-start;
     *ops_done = next_offset/size;
 
-    for(i=0; i<concurrency; i++)
-        abt_io_finalize(aid_array[i]);
+    abt_io_finalize(aid);
 
     ABT_mutex_free(&mutex);
     free(tid_array);
@@ -306,19 +308,21 @@ static void abt_bench_nb(int buffer_per_thread, unsigned int concurrency, size_t
     abt_io_op_t **ops;
     ssize_t *wrets;
 
-    fd = open(filename, O_WRONLY|O_CREAT|O_SYNC, S_IWUSR|S_IRUSR);
+    fd = open(filename, OFLAGS, S_IWUSR|S_IRUSR);
     if(!fd)
     {
         perror("open");
         assert(0);
     }
+    ret = fallocate(fd, 0, 0, 10737418240UL);
+    assert(ret == 0);
+    ret = posix_fadvise(fd, 0, 10737418240UL, POSIX_FADV_DONTNEED);
+    assert(ret == 0);
+    ret = posix_fadvise(fd, 0, 10737418240UL, POSIX_FADV_SEQUENTIAL);
+    assert(ret == 0);
 
     /* initialize abt_io */
-    /* NOTE: for now we are going to use the same number of execution streams
-     * in the io pool as the desired level of issue concurrency, but this
-     * doesn't need to be the case in general.
-     */
-    aid = abt_io_init(concurrency);
+    aid = abt_io_init(0);
     assert(aid != NULL);
 
     /* set up buffers */
@@ -396,12 +400,18 @@ static void pthread_bench(int buffer_per_thread, unsigned int concurrency, size_
     void *buffer;
     double start;
 
-    fd = open(filename, O_WRONLY|O_CREAT|O_SYNC, S_IWUSR|S_IRUSR);
+    fd = open(filename, OFLAGS, S_IWUSR|S_IRUSR);
     if(!fd)
     {
         perror("open");
         assert(0);
     }
+    ret = fallocate(fd, 0, 0, 10737418240UL);
+    assert(ret == 0);
+    ret = posix_fadvise(fd, 0, 10737418240UL, POSIX_FADV_DONTNEED);
+    assert(ret == 0);
+    ret = posix_fadvise(fd, 0, 10737418240UL, POSIX_FADV_SEQUENTIAL);
+    assert(ret == 0);
 
     id_array = malloc(concurrency * sizeof(*id_array));
     assert(id_array);
