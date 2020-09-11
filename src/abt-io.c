@@ -25,7 +25,7 @@
 
 # define ABT_IO_DEFAULT_CFG \
 "{   \"abt-io\": {" \
-"         \"thread_count\": 8" \
+"         \"thread_count\": 16" \
 "}}"
 
 struct abt_io_instance
