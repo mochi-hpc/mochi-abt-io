@@ -62,3 +62,9 @@ system with a level of concurrency determined by the number of execution
 streams in the abt-io pool.  This is similar to aio functionality but with a
 simpler interface and less serialization.
 
+## Tracing
+If you set the environment variable `ABT_IO_TRACE`, abt-io will log to stderr
+the i/o operations it is doing in Darshan "DXT format":
+
+   # Module    Rank  Wt/Rd  Segment          Offset       Length    Start(s)      End(s)
+    X_ABTIO       0  write        0               0       262144      0.0029      0.0032
