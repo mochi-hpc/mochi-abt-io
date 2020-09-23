@@ -33,6 +33,8 @@ struct abt_io_instance {
     struct json_object* json_cfg;
     int                 do_null_io_read;
     int                 do_null_io_write;
+    int                 logging_enabled; /* debugging: log every i/o call? */
+    double epoch_start; /* i/o logs will report time relative to this */
 };
 
 struct abt_io_op {
@@ -116,9 +118,20 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
 
     aid->do_null_io_write
         = json_object_get_int(json_object_object_get(config, "null_io_write"));
-
     aid->do_null_io_read
         = json_object_get_int(json_object_object_get(config, "null_io_read"));
+
+    aid->epoch_start = ABT_get_wtime();
+    aid->logging_enabled
+        = json_object_get_int(json_object_object_get(config, "trace_io"));
+
+    /* TODO: implement a second key "trace_file" that takes a format specifier
+     * similar to valgrind's %p */
+    if (aid->logging_enabled) {
+        fprintf(
+            stderr,
+            "#Module\tRank\tOp\tSegment\tOffset\tLength\tStart(s)\tEnd(s)\n");
+    }
 
     ret = setup_pool(aid, config, args.progress_pool);
     if (ret != 0) goto error;
@@ -149,6 +162,17 @@ void abt_io_finalize(abt_io_instance_id aid)
     free(aid);
 }
 
+static void abt_io_log(abt_io_instance_id aid,
+                       char*              op,
+                       int64_t            offset,
+                       int64_t            length,
+                       double             start,
+                       double             end)
+{
+    if (!aid->logging_enabled) return;
+    fprintf(stderr, "X_ABTIO\t-1\t%s\t-1\t%ld\t%ld\t%f\t%f\n", op, offset,
+            length, start - aid->epoch_start, end - aid->epoch_start);
+}
 struct abt_io_open_state {
     int*               ret;
     const char*        pathname;
@@ -161,11 +185,13 @@ struct abt_io_open_state {
 static void abt_io_open_fn(void* foo)
 {
     struct abt_io_open_state* state = foo;
+    double                    start = ABT_get_wtime();
 
     *state->ret = open(state->pathname, state->flags, state->mode);
     if (*state->ret < 0) *state->ret = -errno;
 
     ABT_eventual_set(state->eventual, NULL, 0);
+    abt_io_log(state->aid, "open", 0, 0, start, ABT_get_wtime());
     return;
 }
 
@@ -275,6 +301,7 @@ struct abt_io_pread_state {
 static void abt_io_pread_fn(void* foo)
 {
     struct abt_io_pread_state* state = foo;
+    double                     start = ABT_get_wtime();
 
     if (state->aid->do_null_io_read)
         *state->ret = state->count; // uh-oh won't be able to detect end of file
@@ -284,6 +311,8 @@ static void abt_io_pread_fn(void* foo)
     }
 
     ABT_eventual_set(state->eventual, NULL, 0);
+    abt_io_log(state->aid, "pread", state->offset, state->count, start,
+               ABT_get_wtime());
     return;
 }
 
@@ -392,7 +421,9 @@ struct abt_io_read_state {
 
 static void abt_io_read_fn(void* foo)
 {
+    double                    start, end;
     struct abt_io_read_state* state = foo;
+    start                           = ABT_get_wtime();
 
     if (state->aid->do_null_io_read)
         *state->ret = state->count;
@@ -401,7 +432,11 @@ static void abt_io_read_fn(void* foo)
         if (*state->ret < 0) *state->ret = -errno;
     }
 
+    if (*state->ret < 0) *state->ret = -errno;
+
     ABT_eventual_set(state->eventual, NULL, 0);
+    end = ABT_get_wtime();
+    abt_io_log(state->aid, "read", -1, state->count, start, end);
     return;
 }
 
@@ -505,6 +540,7 @@ struct abt_io_pwrite_state {
 static void abt_io_pwrite_fn(void* foo)
 {
     struct abt_io_pwrite_state* state = foo;
+    double                      start = ABT_get_wtime();
 
     if (state->aid->do_null_io_write)
         *state->ret = state->count;
@@ -515,6 +551,8 @@ static void abt_io_pwrite_fn(void* foo)
     }
 
     ABT_eventual_set(state->eventual, NULL, 0);
+    abt_io_log(state->aid, "pwrite", state->offset, state->count, start,
+               ABT_get_wtime());
     return;
 }
 
@@ -624,6 +662,7 @@ struct abt_io_write_state {
 static void abt_io_write_fn(void* foo)
 {
     struct abt_io_write_state* state = foo;
+    double                     start = ABT_get_wtime();
 
     if (state->aid->do_null_io_write)
         *state->ret = state->count;
@@ -633,6 +672,7 @@ static void abt_io_write_fn(void* foo)
     }
 
     ABT_eventual_set(state->eventual, NULL, 0);
+    abt_io_log(state->aid, "write", -1, state->count, start, ABT_get_wtime());
     return;
 }
 
@@ -735,6 +775,7 @@ struct abt_io_mkostemp_state {
 static void abt_io_mkostemp_fn(void* foo)
 {
     struct abt_io_mkostemp_state* state = foo;
+    double                        start = ABT_get_wtime();
 
 #ifdef HAVE_MKOSTEMP
     *state->ret = mkostemp(state->tpl, state->flags);
@@ -744,6 +785,7 @@ static void abt_io_mkostemp_fn(void* foo)
     if (*state->ret < 0) *state->ret = -errno;
 
     ABT_eventual_set(state->eventual, NULL, 0);
+    abt_io_log(state->aid, "mkostemp", 0, 0, start, ABT_get_wtime());
     return;
 }
 
@@ -839,11 +881,13 @@ struct abt_io_unlink_state {
 static void abt_io_unlink_fn(void* foo)
 {
     struct abt_io_unlink_state* state = foo;
+    double                      start = ABT_get_wtime();
 
     *state->ret = unlink(state->pathname);
     if (*state->ret < 0) *state->ret = -errno;
 
     ABT_eventual_set(state->eventual, NULL, 0);
+    abt_io_log(state->aid, "unlink", 0, 0, start, ABT_get_wtime());
     return;
 }
 
@@ -939,11 +983,13 @@ struct abt_io_close_state {
 static void abt_io_close_fn(void* foo)
 {
     struct abt_io_close_state* state = foo;
+    double                     start = ABT_get_wtime();
 
     *state->ret = close(state->fd);
     if (*state->ret < 0) *state->ret = -errno;
 
     ABT_eventual_set(state->eventual, NULL, 0);
+    abt_io_log(state->aid, "close", 0, 0, start, ABT_get_wtime());
     return;
 }
 
@@ -1037,11 +1083,13 @@ struct abt_io_fdatasync_state {
 static void abt_io_fdatasync_fn(void* foo)
 {
     struct abt_io_fdatasync_state* state = foo;
+    double                         start = ABT_get_wtime();
 
     *state->ret = fdatasync(state->fd);
     if (*state->ret < 0) *state->ret = -errno;
 
     ABT_eventual_set(state->eventual, NULL, 0);
+    abt_io_log(state->aid, "sync", 0, 0, start, ABT_get_wtime());
     return;
 }
 
@@ -1138,6 +1186,7 @@ struct abt_io_fallocate_state {
 static void abt_io_fallocate_fn(void* foo)
 {
     struct abt_io_fallocate_state* state = foo;
+    double                         start = ABT_get_wtime();
 
 #ifdef HAVE_FALLOCATE
     *state->ret = fallocate(state->fd, state->mode, state->offset, state->len);
@@ -1147,6 +1196,8 @@ static void abt_io_fallocate_fn(void* foo)
 #endif
 
     ABT_eventual_set(state->eventual, NULL, 0);
+    abt_io_log(state->aid, "fallocate", state->offset, state->len, start,
+               ABT_get_wtime());
     return;
 }
 
@@ -1185,7 +1236,6 @@ static int issue_fallocate(abt_io_instance_id aid,
         *ret = -ENOMEM;
         goto err;
     }
-
     if (op != NULL) op->e = pstate->eventual;
 
     rc = ABT_task_create(aid->progress_pool, abt_io_fallocate_fn, pstate, NULL);
@@ -1251,11 +1301,13 @@ struct abt_io_statfs_state {
 static void abt_io_statfs_fn(void* foo)
 {
     struct abt_io_statfs_state* state = foo;
+    double                      start = ABT_get_wtime();
 
     *state->ret = statfs(state->pathname, state->statfsbuf);
     if (*state->ret < 0) *state->ret = -errno;
 
     ABT_eventual_set(state->eventual, NULL, 0);
+    abt_io_log(state->aid, "statfs", 0, 0, start, ABT_get_wtime());
     return;
 }
 
@@ -1338,11 +1390,13 @@ struct abt_io_stat_state {
 static void abt_io_stat_fn(void* foo)
 {
     struct abt_io_stat_state* state = foo;
+    double                    start = ABT_get_wtime();
 
     *state->ret = stat(state->pathname, state->statbuf);
     if (*state->ret < 0) *state->ret = -errno;
 
     ABT_eventual_set(state->eventual, NULL, 0);
+    abt_io_log(state->aid, "stat", 0, 0, start, ABT_get_wtime());
     return;
 }
 
@@ -1423,11 +1477,14 @@ struct abt_io_truncate_state {
 static void abt_io_truncate_fn(void* foo)
 {
     struct abt_io_truncate_state* state = foo;
+    double                        start = ABT_get_wtime();
 
     *state->ret = truncate(state->pathname, state->length);
     if (*state->ret < 0) *state->ret = -errno;
 
     ABT_eventual_set(state->eventual, NULL, 0);
+    abt_io_log(state->aid, "truncate", 0, state->length, start,
+               ABT_get_wtime());
     return;
 }
 
@@ -1549,6 +1606,10 @@ static int validate_and_complete_config(struct json_object* _config,
      * {"null_io_write": false}
      * {"null_io_read": false}
      *
+     * "trace_io" records every ABT-IO operation along with information like
+     * offset, size, and duration
+     * {"trace_io": false}
+     *
      * optional input fields for convenience:
      * --------------
      * {"backing_thread_count": 16}
@@ -1577,6 +1638,21 @@ static int validate_and_complete_config(struct json_object* _config,
 
     if (!CONFIG_HAS(_config, "null_io_read", val)) {
         CONFIG_OVERRIDE_BOOL(_config, "null_io_read", 0, "null_io_read", 0);
+    }
+
+    {
+        const char* trace_io_str     = getenv("ABT_IO_TRACE_IO");
+        int         trace_io_enabled = (trace_io_str ? atoi(trace_io_str) : 0);
+        if (!CONFIG_HAS(_config, "trace_io", val)) {
+            CONFIG_OVERRIDE_BOOL(_config, "trace_io", 0, "trace_io", 0);
+            if (trace_io_str)
+                CONFIG_OVERRIDE_BOOL(_config, "trace_io", trace_io_enabled,
+                                     "trace_io", trace_io_enabled);
+        }
+    }
+
+    if (!CONFIG_HAS(_config, "trace_io", val)) {
+        CONFIG_OVERRIDE_BOOL(_config, "trace_io", 0, "trace_io", 0);
     }
     /* check if thread count convenience field is set */
     if (CONFIG_HAS(_config, "backing_thread_count", val)) {
