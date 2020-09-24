@@ -25,6 +25,7 @@
 
 # define ABT_IO_DEFAULT_CFG \
 "{   \"abt-io\": {" \
+"         \"version\": \"" PACKAGE_VERSION "\"," \
 "         \"thread_count\": 16" \
 "}}"
 
