@@ -1,6 +1,6 @@
 /*
  * (C) 2015 The University of Chicago
- * 
+ *
  * See COPYRIGHT in top-level directory.
  */
 
@@ -35,12 +35,29 @@ typedef struct abt_io_op abt_io_op_t;
 abt_io_instance_id abt_io_init(int backing_thread_count);
 
 /**
+ * Initializes abt_io library using configuration parameters specified in
+ * json_cfg_string
+ *
+ * @param [in] json_cfg_string configuration parameters
+ * @returns abt_io instance id on success, NULL upon error
+ */
+abt_io_instance_id abt_io_init_json(const char* json_cfg_string);
+
+/**
  * Initializes abt_io library using the specified Argobots pool for operation
  * dispatch.
  * @param [in] progress_pool Argobots pool to drive I/O
  * @returns abt_io instance id on success, NULL upon error
  */
 abt_io_instance_id abt_io_init_pool(ABT_pool progress_pool);
+
+/**
+ * Retrieves complete configuration of abt_io, encoded as json
+ *
+ * @param [in] aid abt-io instance
+ * @returns null terminated string that must be free'd by caller
+ */
+char* abt_io_get_config(abt_io_instance_id aid);
 
 /**
  * Shuts down abt_io library and its underlying resources. Waits for underlying
