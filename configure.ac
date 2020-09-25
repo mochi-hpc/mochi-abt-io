@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.67])
-AC_INIT([abt-io], [0.2], [],[],[]) 
+AC_INIT([abt-io], [0.4], [],[],[]) 
 AC_CONFIG_MACRO_DIRS([m4])
 LT_INIT
 
