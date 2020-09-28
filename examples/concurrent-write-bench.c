@@ -374,7 +374,7 @@ static void abt_bench_nb(int buffer_per_thread, unsigned int concurrency, size_t
     for (i = 0; i < num_buffers; i++)
         free(buffers[i]);
     free(buffers);
-
+    free(ops);
     free(wrets);
 
     close(fd);
