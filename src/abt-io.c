@@ -33,6 +33,7 @@ struct abt_io_instance
 {
     ABT_pool progress_pool;
     ABT_xstream *progress_xstreams;
+    ABT_sched *progress_scheds;
     int num_xstreams;
     json_t *component_cfg;
 };
@@ -141,6 +142,7 @@ abt_io_instance_id abt_io_init_json(const char* json_cfg_string)
 
     aid->progress_pool = pool;
     aid->progress_xstreams = progress_xstreams;
+    aid->progress_scheds = progress_scheds;
 
     return aid;
 }
@@ -171,6 +173,7 @@ abt_io_instance_id abt_io_init_pool(ABT_pool progress_pool)
 
     aid->progress_pool = progress_pool;
     aid->progress_xstreams = NULL;
+    aid->progress_scheds = NULL;
     aid->num_xstreams = 0;
 
     return aid;
@@ -186,6 +189,7 @@ void abt_io_finalize(abt_io_instance_id aid)
             ABT_xstream_free(&aid->progress_xstreams[i]);
         }
         free(aid->progress_xstreams);
+        free(aid->progress_scheds);
         // pool gets implicitly freed
     }
 
