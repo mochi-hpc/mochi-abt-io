@@ -36,6 +36,8 @@ struct abt_io_instance
     ABT_sched *progress_scheds;
     int num_xstreams;
     json_t *component_cfg;
+    int logging_enabled;    /* debugging: log every i/o call? */
+    double epoch_start;     /* i/o logs will report time relative to this */
 };
 
 struct abt_io_op
@@ -144,6 +146,15 @@ abt_io_instance_id abt_io_init_json(const char* json_cfg_string)
     aid->progress_xstreams = progress_xstreams;
     aid->progress_scheds = progress_scheds;
 
+    aid->epoch_start = ABT_get_wtime();
+    aid->logging_enabled = 0;
+    /* TODO: implement a second key "trace_file" that takes a format specifier
+     * similar to valgrind's %p */
+    ret = mochi_cfg_get_value_int(aid->component_cfg, "trace_enabled", &aid->logging_enabled);
+    if (ret == 0)
+            fprintf(aid->logfd, "#Module\tRank\tOp\tSegment\tOffset\tLength\tStart(s)\tEnd(s)\n");
+    }
+
     return aid;
 }
 
@@ -199,6 +210,12 @@ void abt_io_finalize(abt_io_instance_id aid)
     free(aid);
 }
 
+static void abt_io_log(abt_io_instance_id aid, char * op, int64_t offset, int64_t length, double start, double end)
+{
+    if (!aid->logging_enabled) return;
+    fprintf(stderr, "X_ABTIO\t-1\t%s\t-1\t%ld\t%ld\t%f\t%f\n",
+            op, offset, length, start-aid->epoch_start, end-aid->epoch_start);
+}
 struct abt_io_open_state
 {
     int *ret;
@@ -206,21 +223,24 @@ struct abt_io_open_state
     int flags;
     mode_t mode;
     ABT_eventual eventual;
+    abt_io_instance_id aid;
 };
 
 static void abt_io_open_fn(void *foo)
 {
     struct abt_io_open_state *state = foo;
+    double start = ABT_get_wtime();
 
     *state->ret = open(state->pathname, state->flags, state->mode);
     if(*state->ret < 0)
         *state->ret = -errno;
 
     ABT_eventual_set(state->eventual, NULL, 0);
+    abt_io_log(state->aid, "open", 0, 0, start, ABT_get_wtime());
     return;
 }
 
-static int issue_open(ABT_pool pool, abt_io_op_t *op, const char* pathname, int flags, mode_t mode, int *ret)
+static int issue_open(abt_io_instance_id aid, abt_io_op_t *op, const char* pathname, int flags, mode_t mode, int *ret)
 {
     struct abt_io_open_state state;
     struct abt_io_open_state *pstate = NULL;
@@ -239,12 +259,13 @@ static int issue_open(ABT_pool pool, abt_io_op_t *op, const char* pathname, int 
     pstate->flags = flags;
     pstate->mode = mode;
     pstate->eventual = NULL;
+    pstate->aid = aid;
     rc = ABT_eventual_create(0, &pstate->eventual);
     if (rc != ABT_SUCCESS) { *ret = -ENOMEM; goto err; }
 
     if (op != NULL) op->e = pstate->eventual;
 
-    rc = ABT_task_create(pool, abt_io_open_fn, pstate, NULL);
+    rc = ABT_task_create(aid->progress_pool, abt_io_open_fn, pstate, NULL);
     if(rc != ABT_SUCCESS) { *ret = -EINVAL; goto err; }
 
     if (op == NULL) {
@@ -268,7 +289,7 @@ err:
 int abt_io_open(abt_io_instance_id aid, const char* pathname, int flags, mode_t mode)
 {
     int ret;
-    issue_open(aid->progress_pool, NULL, pathname, flags, mode, &ret);
+    issue_open(aid, NULL, pathname, flags, mode, &ret);
     return ret;
 }
 
@@ -280,7 +301,7 @@ abt_io_op_t* abt_io_open_nb(abt_io_instance_id aid, const char* pathname, int fl
     op = malloc(sizeof(*op));
     if (op == NULL) return NULL;
 
-    iret = issue_open(aid->progress_pool, op, pathname, flags, mode, ret);
+    iret = issue_open(aid, op, pathname, flags, mode, ret);
     if (iret != 0) { free(op); return NULL; }
     else return op;
 }
@@ -293,21 +314,24 @@ struct abt_io_pread_state
     size_t count;
     off_t offset;
     ABT_eventual eventual;
+    abt_io_instance_id aid;
 };
 
 static void abt_io_pread_fn(void *foo)
 {
     struct abt_io_pread_state *state = foo;
+    double start = ABT_get_wtime();
 
     *state->ret = pread(state->fd, state->buf, state->count, state->offset);
     if(*state->ret < 0)
         *state->ret = -errno;
 
     ABT_eventual_set(state->eventual, NULL, 0);
+    abt_io_log(state->aid, "pread", state->offset, state->count, start, ABT_get_wtime());
     return;
 }
 
-static int issue_pread(ABT_pool pool, abt_io_op_t *op, int fd, void *buf,
+static int issue_pread(abt_io_instance_id aid, abt_io_op_t *op, int fd, void *buf,
         size_t count, off_t offset, ssize_t *ret)
 {
     struct abt_io_pread_state state;
@@ -328,12 +352,13 @@ static int issue_pread(ABT_pool pool, abt_io_op_t *op, int fd, void *buf,
     pstate->count = count;
     pstate->offset = offset;
     pstate->eventual = NULL;
+    pstate->aid = aid;
     rc = ABT_eventual_create(0, &pstate->eventual);
     if (rc != ABT_SUCCESS) { *ret = -ENOMEM; goto err; }
 
     if (op != NULL) op->e = pstate->eventual;
 
-    rc = ABT_task_create(pool, abt_io_pread_fn, pstate, NULL);
+    rc = ABT_task_create(aid->progress_pool, abt_io_pread_fn, pstate, NULL);
     if(rc != ABT_SUCCESS) { *ret = -EINVAL; goto err; }
 
     if (op == NULL) {
@@ -358,7 +383,7 @@ ssize_t abt_io_pread(abt_io_instance_id aid, int fd, void *buf,
         size_t count, off_t offset)
 {
     ssize_t ret = -1;
-    issue_pread(aid->progress_pool, NULL, fd, buf, count, offset, &ret);
+    issue_pread(aid, NULL, fd, buf, count, offset, &ret);
     return ret;
 }
 
@@ -371,7 +396,7 @@ abt_io_op_t* abt_io_pread_nb(abt_io_instance_id aid, int fd, void *buf,
     op = malloc(sizeof(*op));
     if (op == NULL) return NULL;
 
-    iret = issue_pread(aid->progress_pool, op, fd, buf, count, offset, ret);
+    iret = issue_pread(aid, op, fd, buf, count, offset, ret);
     if (iret != 0) { free(op); return NULL; }
     else return op;
 }
@@ -383,21 +408,26 @@ struct abt_io_read_state
     void *buf;
     size_t count;
     ABT_eventual eventual;
+    abt_io_instance_id aid;
 };
 
 static void abt_io_read_fn(void *foo)
 {
+    double start, end;
     struct abt_io_read_state *state = foo;
 
+    start = ABT_get_wtime();
     *state->ret = read(state->fd, state->buf, state->count);
     if(*state->ret < 0)
         *state->ret = -errno;
 
     ABT_eventual_set(state->eventual, NULL, 0);
+    end = ABT_get_wtime();
+    abt_io_log(state->aid, "read", -1, state->count, start, end);
     return;
 }
 
-static int issue_read(ABT_pool pool, abt_io_op_t *op, int fd, void *buf,
+static int issue_read(abt_io_instance_id aid, abt_io_op_t *op, int fd, void *buf,
         size_t count, ssize_t *ret)
 {
     struct abt_io_read_state state;
@@ -417,12 +447,13 @@ static int issue_read(ABT_pool pool, abt_io_op_t *op, int fd, void *buf,
     pstate->buf = buf;
     pstate->count = count;
     pstate->eventual = NULL;
+    pstate->aid = aid;
     rc = ABT_eventual_create(0, &pstate->eventual);
     if (rc != ABT_SUCCESS) { *ret = -ENOMEM; goto err; }
 
     if (op != NULL) op->e = pstate->eventual;
 
-    rc = ABT_task_create(pool, abt_io_read_fn, pstate, NULL);
+    rc = ABT_task_create(aid->progress_pool, abt_io_read_fn, pstate, NULL);
     if(rc != ABT_SUCCESS) { *ret = -EINVAL; goto err; }
 
     if (op == NULL) {
@@ -446,7 +477,7 @@ err:
 ssize_t abt_io_read(abt_io_instance_id aid, int fd, void *buf, size_t count)
 {
     ssize_t ret = -1;
-    issue_read(aid->progress_pool, NULL, fd, buf, count, &ret);
+    issue_read(aid, NULL, fd, buf, count, &ret);
     return ret;
 }
 
@@ -459,7 +490,7 @@ abt_io_op_t* abt_io_read_nb(abt_io_instance_id aid, int fd, void *buf,
     op = malloc(sizeof(*op));
     if (op == NULL) return NULL;
 
-    iret = issue_read(aid->progress_pool, op, fd, buf, count, ret);
+    iret = issue_read(aid, op, fd, buf, count, ret);
     if (iret != 0) { free(op); return NULL; }
     else return op;
 }
@@ -472,21 +503,25 @@ struct abt_io_pwrite_state
     size_t count;
     off_t offset;
     ABT_eventual eventual;
+    abt_io_instance_id aid;
+
 };
 
 static void abt_io_pwrite_fn(void *foo)
 {
     struct abt_io_pwrite_state *state = foo;
+    double start = ABT_get_wtime();
 
     *state->ret = pwrite(state->fd, state->buf, state->count, state->offset);
     if(*state->ret < 0)
         *state->ret = -errno;
 
     ABT_eventual_set(state->eventual, NULL, 0);
+    abt_io_log(state->aid, "pwrite", state->offset, state->count, start, ABT_get_wtime());
     return;
 }
 
-static int issue_pwrite(ABT_pool pool, abt_io_op_t *op, int fd, const void *buf,
+static int issue_pwrite(abt_io_instance_id aid, abt_io_op_t *op, int fd, const void *buf,
         size_t count, off_t offset, ssize_t *ret)
 {
     struct abt_io_pwrite_state state;
@@ -507,12 +542,13 @@ static int issue_pwrite(ABT_pool pool, abt_io_op_t *op, int fd, const void *buf,
     pstate->count = count;
     pstate->offset = offset;
     pstate->eventual = NULL;
+    pstate->aid = aid;
     rc = ABT_eventual_create(0, &pstate->eventual);
     if (rc != ABT_SUCCESS) { *ret = -ENOMEM; goto err; }
 
     if (op != NULL) op->e = pstate->eventual;
 
-    rc = ABT_task_create(pool, abt_io_pwrite_fn, pstate, NULL);
+    rc = ABT_task_create(aid->progress_pool, abt_io_pwrite_fn, pstate, NULL);
     if(rc != ABT_SUCCESS) { *ret = -EINVAL; goto err; }
 
     if (op == NULL) {
@@ -537,7 +573,7 @@ ssize_t abt_io_pwrite(abt_io_instance_id aid, int fd, const void *buf,
         size_t count, off_t offset)
 {
     ssize_t ret = -1;
-    issue_pwrite(aid->progress_pool, NULL, fd, buf, count, offset, &ret);
+    issue_pwrite(aid, NULL, fd, buf, count, offset, &ret);
     return ret;
 }
 
@@ -550,7 +586,7 @@ abt_io_op_t* abt_io_pwrite_nb(abt_io_instance_id aid, int fd, const void *buf,
     op = malloc(sizeof(*op));
     if (op == NULL) return NULL;
 
-    iret = issue_pwrite(aid->progress_pool, op, fd, buf, count, offset, ret);
+    iret = issue_pwrite(aid, op, fd, buf, count, offset, ret);
     if (iret != 0) { free(op); return NULL; }
     else return op;
 }
@@ -562,21 +598,24 @@ struct abt_io_write_state
     const void *buf;
     size_t count;
     ABT_eventual eventual;
+    abt_io_instance_id aid;
 };
 
 static void abt_io_write_fn(void *foo)
 {
     struct abt_io_write_state *state = foo;
+    double start = ABT_get_wtime();
 
     *state->ret = write(state->fd, state->buf, state->count);
     if(*state->ret < 0)
         *state->ret = -errno;
 
     ABT_eventual_set(state->eventual, NULL, 0);
+    abt_io_log(state->aid, "write", -1, state->count, start, ABT_get_wtime());
     return;
 }
 
-static int issue_write(ABT_pool pool, abt_io_op_t *op, int fd, const void *buf,
+static int issue_write(abt_io_instance_id aid, abt_io_op_t *op, int fd, const void *buf,
         size_t count, ssize_t *ret)
 {
     struct abt_io_write_state state;
@@ -596,12 +635,13 @@ static int issue_write(ABT_pool pool, abt_io_op_t *op, int fd, const void *buf,
     pstate->buf = buf;
     pstate->count = count;
     pstate->eventual = NULL;
+    pstate->aid = aid;
     rc = ABT_eventual_create(0, &pstate->eventual);
     if (rc != ABT_SUCCESS) { *ret = -ENOMEM; goto err; }
 
     if (op != NULL) op->e = pstate->eventual;
 
-    rc = ABT_task_create(pool, abt_io_write_fn, pstate, NULL);
+    rc = ABT_task_create(aid->progress_pool, abt_io_write_fn, pstate, NULL);
     if(rc != ABT_SUCCESS) { *ret = -EINVAL; goto err; }
 
     if (op == NULL) {
@@ -625,7 +665,7 @@ err:
 ssize_t abt_io_write(abt_io_instance_id aid, int fd, const void *buf, size_t count)
 {
     ssize_t ret = -1;
-    issue_write(aid->progress_pool, NULL, fd, buf, count, &ret);
+    issue_write(aid, NULL, fd, buf, count, &ret);
     return ret;
 }
 
@@ -638,7 +678,7 @@ abt_io_op_t* abt_io_write_nb(abt_io_instance_id aid, int fd, const void *buf,
     op = malloc(sizeof(*op));
     if (op == NULL) return NULL;
 
-    iret = issue_write(aid->progress_pool, op, fd, buf, count, ret);
+    iret = issue_write(aid, op, fd, buf, count, ret);
     if (iret != 0) { free(op); return NULL; }
     else return op;
 }
@@ -650,11 +690,13 @@ struct abt_io_mkostemp_state
     char *tpl;
     int flags;
     ABT_eventual eventual;
+    abt_io_instance_id aid;
 };
 
 static void abt_io_mkostemp_fn(void *foo)
 {
     struct abt_io_mkostemp_state *state = foo;
+    double start = ABT_get_wtime();
 
 #ifdef HAVE_MKOSTEMP
     *state->ret = mkostemp(state->tpl, state->flags);
@@ -665,10 +707,11 @@ static void abt_io_mkostemp_fn(void *foo)
         *state->ret = -errno;
 
     ABT_eventual_set(state->eventual, NULL, 0);
+    abt_io_log(state->aid, "mkostemp", 0, 0, start, ABT_get_wtime());
     return;
 }
 
-static int issue_mkostemp(ABT_pool pool, abt_io_op_t *op, char* tpl, int flags, int *ret)
+static int issue_mkostemp(abt_io_instance_id aid, abt_io_op_t *op, char* tpl, int flags, int *ret)
 {
     struct abt_io_mkostemp_state state;
     struct abt_io_mkostemp_state *pstate = NULL;
@@ -686,12 +729,13 @@ static int issue_mkostemp(ABT_pool pool, abt_io_op_t *op, char* tpl, int flags, 
     pstate->tpl = tpl;
     pstate->flags = flags;
     pstate->eventual = NULL;
+    pstate->aid = aid;
     rc = ABT_eventual_create(0, &pstate->eventual);
     if (rc != ABT_SUCCESS) { *ret = -ENOMEM; goto err; }
 
     if (op != NULL) op->e = pstate->eventual;
 
-    rc = ABT_task_create(pool, abt_io_mkostemp_fn, pstate, NULL);
+    rc = ABT_task_create(aid->progress_pool, abt_io_mkostemp_fn, pstate, NULL);
     if(rc != ABT_SUCCESS) { *ret = -EINVAL; goto err; }
 
     if (op == NULL) {
@@ -715,7 +759,7 @@ err:
 int abt_io_mkostemp(abt_io_instance_id aid, char *tpl, int flags)
 {
     int ret = -1;
-    issue_mkostemp(aid->progress_pool, NULL, tpl, flags, &ret);
+    issue_mkostemp(aid, NULL, tpl, flags, &ret);
     return ret;
 }
 
@@ -727,7 +771,7 @@ abt_io_op_t* abt_io_mkostemp_nb(abt_io_instance_id aid, char *tpl, int flags, in
     op = malloc(sizeof(*op));
     if (op == NULL) return NULL;
 
-    iret = issue_mkostemp(aid->progress_pool, op, tpl, flags, ret);
+    iret = issue_mkostemp(aid, op, tpl, flags, ret);
     if (iret != 0) { free(op); return NULL; }
     else return op;
 }
@@ -737,21 +781,24 @@ struct abt_io_unlink_state
     int *ret;
     const char *pathname;
     ABT_eventual eventual;
+    abt_io_instance_id aid;
 };
 
 static void abt_io_unlink_fn(void *foo)
 {
     struct abt_io_unlink_state *state = foo;
+    double start = ABT_get_wtime();
 
     *state->ret = unlink(state->pathname);
     if(*state->ret < 0)
         *state->ret = -errno;
 
     ABT_eventual_set(state->eventual, NULL, 0);
+    abt_io_log(state->aid, "unlink", 0, 0, start, ABT_get_wtime());
     return;
 }
 
-static int issue_unlink(ABT_pool pool, abt_io_op_t *op, const char* pathname, int *ret)
+static int issue_unlink(abt_io_instance_id aid, abt_io_op_t *op, const char* pathname, int *ret)
 {
     struct abt_io_unlink_state state;
     struct abt_io_unlink_state *pstate = NULL;
@@ -768,12 +815,13 @@ static int issue_unlink(ABT_pool pool, abt_io_op_t *op, const char* pathname, in
     pstate->ret = ret;
     pstate->pathname = pathname;
     pstate->eventual = NULL;
+    pstate->aid = aid;
     rc = ABT_eventual_create(0, &pstate->eventual);
     if (rc != ABT_SUCCESS) { *ret = -ENOMEM; goto err; }
 
     if (op != NULL) op->e = pstate->eventual;
 
-    rc = ABT_task_create(pool, abt_io_unlink_fn, pstate, NULL);
+    rc = ABT_task_create(aid->progress_pool, abt_io_unlink_fn, pstate, NULL);
     if(rc != ABT_SUCCESS) { *ret = -EINVAL; goto err; }
 
     if (op == NULL) {
@@ -797,7 +845,7 @@ err:
 int abt_io_unlink(abt_io_instance_id aid, const char *pathname)
 {
     int ret = -1;
-    issue_unlink(aid->progress_pool, NULL, pathname, &ret);
+    issue_unlink(aid, NULL, pathname, &ret);
     return ret;
 }
 
@@ -809,7 +857,7 @@ abt_io_op_t* abt_io_unlink_nb(abt_io_instance_id aid, const char *pathname, int 
     op = malloc(sizeof(*op));
     if (op == NULL) return NULL;
 
-    iret = issue_unlink(aid->progress_pool, op, pathname, ret);
+    iret = issue_unlink(aid, op, pathname, ret);
     if (iret != 0) { free(op); return NULL; }
     else return op;
 }
@@ -819,21 +867,24 @@ struct abt_io_close_state
     int *ret;
     int fd;
     ABT_eventual eventual;
+    abt_io_instance_id aid;
 };
 
 static void abt_io_close_fn(void *foo)
 {
     struct abt_io_close_state *state = foo;
+    double start = ABT_get_wtime();
 
     *state->ret = close(state->fd);
     if(*state->ret < 0)
         *state->ret = -errno;
 
     ABT_eventual_set(state->eventual, NULL, 0);
+    abt_io_log(state->aid, "close", 0, 0, start, ABT_get_wtime());
     return;
 }
 
-static int issue_close(ABT_pool pool, abt_io_op_t *op, int fd, int *ret)
+static int issue_close(abt_io_instance_id aid, abt_io_op_t *op, int fd, int *ret)
 {
     struct abt_io_close_state state;
     struct abt_io_close_state *pstate = NULL;
@@ -849,12 +900,13 @@ static int issue_close(ABT_pool pool, abt_io_op_t *op, int fd, int *ret)
     pstate->ret = ret;
     pstate->fd = fd;
     pstate->eventual = NULL;
+    pstate->aid = aid;
     rc = ABT_eventual_create(0, &pstate->eventual);
     if (rc != ABT_SUCCESS) { *ret = -ENOMEM; goto err; }
 
     if (op != NULL) op->e = pstate->eventual;
 
-    rc = ABT_task_create(pool, abt_io_close_fn, pstate, NULL);
+    rc = ABT_task_create(aid->progress_pool, abt_io_close_fn, pstate, NULL);
     if(rc != ABT_SUCCESS) { *ret = -EINVAL; goto err; }
 
     if (op == NULL) {
@@ -878,7 +930,7 @@ err:
 int abt_io_close(abt_io_instance_id aid, int fd)
 {
     int ret = -1;
-    issue_close(aid->progress_pool, NULL, fd, &ret);
+    issue_close(aid, NULL, fd, &ret);
     return ret;
 }
 
@@ -890,7 +942,7 @@ abt_io_op_t* abt_io_close_nb(abt_io_instance_id aid, int fd, int *ret)
     op = malloc(sizeof(*op));
     if (op == NULL) return NULL;
 
-    iret = issue_close(aid->progress_pool, op, fd, ret);
+    iret = issue_close(aid, op, fd, ret);
     if (iret != 0) { free(op); return NULL; }
     else return op;
 }
@@ -900,21 +952,24 @@ struct abt_io_fdatasync_state
     int *ret;
     int fd;
     ABT_eventual eventual;
+    abt_io_instance_id aid;
 };
 
 static void abt_io_fdatasync_fn(void *foo)
 {
     struct abt_io_fdatasync_state *state = foo;
+    double start = ABT_get_wtime();
 
     *state->ret = fdatasync(state->fd);
     if(*state->ret < 0)
         *state->ret = -errno;
 
     ABT_eventual_set(state->eventual, NULL, 0);
+    abt_io_log(state->aid, "sync", 0, 0, start, ABT_get_wtime());
     return;
 }
 
-static int issue_fdatasync(ABT_pool pool, abt_io_op_t *op, int fd, int *ret)
+static int issue_fdatasync(abt_io_instance_id aid, abt_io_op_t *op, int fd, int *ret)
 {
     struct abt_io_fdatasync_state state;
     struct abt_io_fdatasync_state *pstate = NULL;
@@ -930,12 +985,13 @@ static int issue_fdatasync(ABT_pool pool, abt_io_op_t *op, int fd, int *ret)
     pstate->ret = ret;
     pstate->fd = fd;
     pstate->eventual = NULL;
+    pstate->aid = aid;
     rc = ABT_eventual_create(0, &pstate->eventual);
     if (rc != ABT_SUCCESS) { *ret = -ENOMEM; goto err; }
 
     if (op != NULL) op->e = pstate->eventual;
 
-    rc = ABT_task_create(pool, abt_io_fdatasync_fn, pstate, NULL);
+    rc = ABT_task_create(aid->progress_pool, abt_io_fdatasync_fn, pstate, NULL);
     if(rc != ABT_SUCCESS) { *ret = -EINVAL; goto err; }
 
     if (op == NULL) {
@@ -959,7 +1015,7 @@ err:
 int abt_io_fdatasync(abt_io_instance_id aid, int fd)
 {
     int ret = -1;
-    issue_fdatasync(aid->progress_pool, NULL, fd, &ret);
+    issue_fdatasync(aid, NULL, fd, &ret);
     return ret;
 }
 
@@ -971,7 +1027,7 @@ abt_io_op_t* abt_io_fdatasync_nb(abt_io_instance_id aid, int fd, int *ret)
     op = malloc(sizeof(*op));
     if (op == NULL) return NULL;
 
-    iret = issue_fdatasync(aid->progress_pool, op, fd, ret);
+    iret = issue_fdatasync(aid, op, fd, ret);
     if (iret != 0) { free(op); return NULL; }
     else return op;
 }
@@ -984,11 +1040,13 @@ struct abt_io_fallocate_state
     off_t offset;
     off_t len;
     ABT_eventual eventual;
+    abt_io_instance_id aid;
 };
 
 static void abt_io_fallocate_fn(void *foo)
 {
     struct abt_io_fallocate_state *state = foo;
+    double start = ABT_get_wtime();
 
 #ifdef HAVE_FALLOCATE
     *state->ret = fallocate(state->fd, state->mode, state->offset, state->len);
@@ -999,10 +1057,11 @@ static void abt_io_fallocate_fn(void *foo)
 #endif
 
     ABT_eventual_set(state->eventual, NULL, 0);
+    abt_io_log(state->aid, "fallocate", 0, 0, start, ABT_get_wtime());
     return;
 }
 
-static int issue_fallocate(ABT_pool pool, abt_io_op_t *op, int fd, int mode, off_t offset, off_t len, int *ret)
+static int issue_fallocate(abt_io_instance_id aid, abt_io_op_t *op, int fd, int mode, off_t offset, off_t len, int *ret)
 {
     struct abt_io_fallocate_state state;
     struct abt_io_fallocate_state *pstate = NULL;
@@ -1021,12 +1080,13 @@ static int issue_fallocate(ABT_pool pool, abt_io_op_t *op, int fd, int mode, off
     pstate->offset = offset;
     pstate->len = len;
     pstate->eventual = NULL;
+    pstate->aid = aid;
     rc = ABT_eventual_create(0, &pstate->eventual);
     if (rc != ABT_SUCCESS) { *ret = -ENOMEM; goto err; }
 
     if (op != NULL) op->e = pstate->eventual;
 
-    rc = ABT_task_create(pool, abt_io_fallocate_fn, pstate, NULL);
+    rc = ABT_task_create(aid->progress_pool, abt_io_fallocate_fn, pstate, NULL);
     if(rc != ABT_SUCCESS) { *ret = -EINVAL; goto err; }
 
     if (op == NULL) {
@@ -1050,7 +1110,7 @@ err:
 int abt_io_fallocate(abt_io_instance_id aid, int fd, int mode, off_t offset, off_t len)
 {
     int ret = -1;
-    issue_fallocate(aid->progress_pool, NULL, fd, mode, offset, len, &ret);
+    issue_fallocate(aid, NULL, fd, mode, offset, len, &ret);
     return ret;
 }
 
@@ -1062,7 +1122,7 @@ abt_io_op_t* abt_io_fallocate_nb(abt_io_instance_id aid, int fd, int mode, off_t
     op = malloc(sizeof(*op));
     if (op == NULL) return NULL;
 
-    iret = issue_fallocate(aid->progress_pool, op, fd, mode, offset, len, ret);
+    iret = issue_fallocate(aid, op, fd, mode, offset, len, ret);
     if (iret != 0) { free(op); return NULL; }
     else return op;
 }
