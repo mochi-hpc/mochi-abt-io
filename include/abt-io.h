@@ -26,6 +26,19 @@ struct abt_io_op;
 typedef struct abt_io_op abt_io_op_t;
 
 /**
+ * The abt_io_init_info structure should be passed to abt_io_init_ext
+ * to finely configure abt-io. The structure can be memset to 0 to have
+ * abt-io use default values. For any field that is not NULL,
+ * abt_io_init_ext will first look for a configuration in the json_config
+ * string. If no configuration is found or of json_config is NULL, abt-io
+ * will fall back to default.
+ */
+struct abt_io_init_info {
+    const char* json_config;   /* JSON-formatted string */
+    ABT_pool    progress_pool; /* Progress pool */
+};
+
+/**
  * Initializes abt_io library, using the specified number of backing threads. A
  * count of zero currently indicates that concurrent I/O progress is not made
  * unless control is passed to blocking abt-io calls (or other blocking calls
@@ -34,6 +47,16 @@ typedef struct abt_io_op abt_io_op_t;
  * @returns abt_io instance id on success, NULL upon error
  */
 abt_io_instance_id abt_io_init(int backing_thread_count);
+
+/**
+ * Initializes an abt-io instance using an abt_io_init_info struct to provide
+ * arguments.
+ *
+ * @param args Arguments
+ *
+ * @return an abt_io_instance_id or ABT_IO_INSTANCE_NULL in case of failure.
+ */
+abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* args);
 
 /**
  * Initializes abt_io library using the specified Argobots pool for operation
@@ -204,6 +227,14 @@ void abt_io_op_free(abt_io_op_t* op);
  * enquire about status of underlying Argobots pool
  */
 size_t abt_io_get_pending_op_count(abt_io_instance_id aid);
+
+/**
+ * Retrieves complete configuration of abt-io instance, incoded as json
+ *
+ * @param [in] aid abt-io instance
+ * @returns null terminated string that must be free'd by caller
+ */
+char* abt_io_get_config(abt_io_instance_id aid);
 
 #ifdef __cplusplus
 }

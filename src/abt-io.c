@@ -113,6 +113,14 @@ abt_io_instance_id abt_io_init(int backing_thread_count)
     return aid;
 }
 
+abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* args)
+{
+    /* TODO: fill this in */
+    fprintf(stderr,
+            "WARNING: not implemented; passing through to abt_io_init().\n");
+    return (abt_io_init(1));
+}
+
 abt_io_instance_id abt_io_init_pool(ABT_pool progress_pool)
 {
     struct abt_io_instance* aid;
@@ -1219,4 +1227,15 @@ size_t abt_io_get_pending_op_count(abt_io_instance_id aid)
         return size;
     else
         return -1;
+}
+
+char* abt_io_get_config(abt_io_instance_id aid)
+{
+    char* str;
+
+    fprintf(stderr, "WARNING: not implemented; returning placeholder.\n");
+
+    str = strdup("{}");
+
+    return (str);
 }
