@@ -1,7 +1,7 @@
 
 /*
  * (C) 2015 The University of Chicago
- *
+ * 
  * See COPYRIGHT in top-level directory.
  */
 
@@ -17,25 +17,15 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <jansson.h>
 
 #include <abt.h>
-#include <mochi-cfg.h>
 #include "abt-io.h"
-
-# define ABT_IO_DEFAULT_CFG \
-"{   \"abt-io\": {" \
-"         \"version\": \"" PACKAGE_VERSION "\"," \
-"         \"thread_count\": 16" \
-"}}"
 
 struct abt_io_instance
 {
     ABT_pool progress_pool;
     ABT_xstream *progress_xstreams;
-    ABT_sched *progress_scheds;
     int num_xstreams;
-    json_t *component_cfg;
 };
 
 struct abt_io_op
@@ -45,7 +35,7 @@ struct abt_io_op
     void (*free_fn)(void*);
 };
 
-abt_io_instance_id abt_io_init_json(const char* json_cfg_string)
+abt_io_instance_id abt_io_init(int backing_thread_count)
 {
     struct abt_io_instance *aid;
     ABT_pool pool;
@@ -54,54 +44,30 @@ abt_io_instance_id abt_io_init_json(const char* json_cfg_string)
     ABT_sched *progress_scheds = NULL;
     int ret;
     int i;
-    int thread_count;
 
-    aid = calloc(1, sizeof(*aid));
+    if (backing_thread_count < 0) return NULL;
+
+    aid = malloc(sizeof(*aid));
     if (aid == NULL) return ABT_IO_INSTANCE_NULL;
 
-    aid->component_cfg = mochi_cfg_get_component(json_cfg_string, "abt-io", ABT_IO_DEFAULT_CFG);
-    if(!aid->component_cfg)
-    {
-        fprintf(stderr, "Error: unable to set up abt-io config.\n");
-        return(ABT_IO_INSTANCE_NULL);
-    }
-
-    ret = mochi_cfg_get_value_int(aid->component_cfg, "thread_count", &thread_count);
-    if(ret < 0 || thread_count < 0)
-    {
-        mochi_cfg_release_component(aid->component_cfg);
-        free(aid);
-        return(ABT_IO_INSTANCE_NULL);
-    }
-
-    if (thread_count == 0) {
+    if (backing_thread_count == 0) {
         aid->num_xstreams = 0;
         ret = ABT_xstream_self(&self_xstream);
-        if (ret != ABT_SUCCESS) {
-            mochi_cfg_release_component(aid->component_cfg);
-            free(aid);
-            return ABT_IO_INSTANCE_NULL;
-        }
+        if (ret != ABT_SUCCESS) { free(aid); return ABT_IO_INSTANCE_NULL; }
         ret = ABT_xstream_get_main_pools(self_xstream, 1, &pool);
-        if (ret != ABT_SUCCESS) {
-            mochi_cfg_release_component(aid->component_cfg);
-            free(aid);
-            return ABT_IO_INSTANCE_NULL;
-        }
+        if (ret != ABT_SUCCESS) { free(aid); return ABT_IO_INSTANCE_NULL; }
     }
     else {
-        aid->num_xstreams = thread_count;
+        aid->num_xstreams = backing_thread_count;
         progress_xstreams = malloc(
-                thread_count * sizeof(*progress_xstreams));
+                backing_thread_count * sizeof(*progress_xstreams));
         if (progress_xstreams == NULL) {
-            mochi_cfg_release_component(aid->component_cfg);
             free(aid);
             return ABT_IO_INSTANCE_NULL;
         }
         progress_scheds = malloc(
-                thread_count * sizeof(*progress_scheds));
+                backing_thread_count * sizeof(*progress_scheds));
         if (progress_scheds == NULL) {
-            mochi_cfg_release_component(aid->component_cfg);
             free(progress_xstreams);
             free(aid);
             return ABT_IO_INSTANCE_NULL;
@@ -111,19 +77,17 @@ abt_io_instance_id abt_io_init_json(const char* json_cfg_string)
             ABT_TRUE, &pool);
         if(ret != ABT_SUCCESS)
         {
-            mochi_cfg_release_component(aid->component_cfg);
             free(progress_xstreams);
             free(progress_scheds);
             free(aid);
             return ABT_IO_INSTANCE_NULL;
         }
 
-        for(i=0; i<thread_count; i++)
+        for(i=0; i<backing_thread_count; i++)
         {
             ret = ABT_sched_create_basic(ABT_SCHED_BASIC_WAIT, 1, &pool,
                ABT_SCHED_CONFIG_NULL, &progress_scheds[i]);
             if (ret != ABT_SUCCESS) {
-                mochi_cfg_release_component(aid->component_cfg);
                 free(progress_xstreams);
                 free(progress_scheds);
                 free(aid);
@@ -131,7 +95,6 @@ abt_io_instance_id abt_io_init_json(const char* json_cfg_string)
             }
             ret = ABT_xstream_create(progress_scheds[i], &progress_xstreams[i]);
             if (ret != ABT_SUCCESS) {
-                mochi_cfg_release_component(aid->component_cfg);
                 free(progress_xstreams);
                 free(progress_scheds);
                 free(aid);
@@ -142,26 +105,8 @@ abt_io_instance_id abt_io_init_json(const char* json_cfg_string)
 
     aid->progress_pool = pool;
     aid->progress_xstreams = progress_xstreams;
-    aid->progress_scheds = progress_scheds;
 
     return aid;
-}
-
-abt_io_instance_id abt_io_init(int thread_count)
-{
-    char cfg_string[64];
-
-    /* NOTE: jansson could be used for more complex encodings, but this one
-     * is trivial enough to just do with snprintf()
-     */
-    snprintf(cfg_string, 64, "{\"abt-io\": {\"thread_count\": %d }}", thread_count);
-
-    return(abt_io_init_json(cfg_string));
-}
-
-char* abt_io_get_config(abt_io_instance_id aid)
-{
-    return(mochi_cfg_emit(aid->component_cfg, "abt-io"));
 }
 
 abt_io_instance_id abt_io_init_pool(ABT_pool progress_pool)
@@ -173,7 +118,6 @@ abt_io_instance_id abt_io_init_pool(ABT_pool progress_pool)
 
     aid->progress_pool = progress_pool;
     aid->progress_xstreams = NULL;
-    aid->progress_scheds = NULL;
     aid->num_xstreams = 0;
 
     return aid;
@@ -189,12 +133,8 @@ void abt_io_finalize(abt_io_instance_id aid)
             ABT_xstream_free(&aid->progress_xstreams[i]);
         }
         free(aid->progress_xstreams);
-        free(aid->progress_scheds);
         // pool gets implicitly freed
     }
-
-    if(aid->component_cfg)
-        mochi_cfg_release_component(aid->component_cfg);
 
     free(aid);
 }

@@ -176,7 +176,6 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
     int fd;
     void *buffer;
     double start;
-    char *cfg_str;
 
     fd = open(filename, OFLAGS, S_IWUSR|S_IRUSR);
     if(!fd)
@@ -203,10 +202,6 @@ static void abt_bench(int buffer_per_thread, unsigned int concurrency, size_t si
      */
     aid = abt_io_init(concurrency);
     assert(aid != NULL);
-
-    cfg_str = abt_io_get_config(aid);
-    printf("%s\n", cfg_str);
-    free(cfg_str);
 
     ABT_mutex_create(&mutex);
 
@@ -299,7 +294,6 @@ static void abt_bench_nb(int buffer_per_thread, unsigned int concurrency, size_t
     double start_time;
     abt_io_op_t **ops;
     ssize_t *wrets;
-    char *cfg_str;
 
     fd = open(filename, OFLAGS, S_IWUSR|S_IRUSR);
     if(!fd)
@@ -317,10 +311,6 @@ static void abt_bench_nb(int buffer_per_thread, unsigned int concurrency, size_t
      */
     aid = abt_io_init(concurrency);
     assert(aid != NULL);
-
-    cfg_str = abt_io_get_config(aid);
-    printf("%s\n", cfg_str);
-    free(cfg_str);
 
     /* set up buffers */
     num_buffers = buffer_per_thread ? concurrency : 1;
@@ -374,7 +364,7 @@ static void abt_bench_nb(int buffer_per_thread, unsigned int concurrency, size_t
     for (i = 0; i < num_buffers; i++)
         free(buffers[i]);
     free(buffers);
-    free(ops);
+
     free(wrets);
 
     close(fd);

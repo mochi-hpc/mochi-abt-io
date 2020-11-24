@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.67])
-AC_INIT([abt-io], [0.4], [],[],[]) 
+AC_INIT([abt-io], [0.2], [],[],[]) 
 AC_CONFIG_MACRO_DIRS([m4])
 LT_INIT
 
@@ -49,12 +49,6 @@ PKG_CHECK_MODULES([ARGOBOTS],[argobots],[],
 LIBS="$ARGOBOTS_LIBS $LIBS"
 CPPFLAGS="$ARGOBOTS_CFLAGS $CPPFLAGS"
 CFLAGS="$ARGOBOTS_CFLAGS $CFLAGS"
-
-PKG_CHECK_MODULES([MOCHICFG],[mochi-cfg],[],
-   [AC_MSG_ERROR([Could not find working mochi-cfg installation!])])
-LIBS="$MOCHICFG_LIBS $LIBS"
-CPPFLAGS="$MOCHICFG_CFLAGS $CPPFLAGS"
-CFLAGS="$MOCHICFG_CFLAGS $CFLAGS"
 
 AC_MSG_CHECKING([for fallocate])
 AC_TRY_COMPILE([
