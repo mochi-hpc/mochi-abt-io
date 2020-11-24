@@ -25,6 +25,7 @@ struct abt_io_instance
 {
     ABT_pool progress_pool;
     ABT_xstream *progress_xstreams;
+    ABT_sched *progress_scheds;
     int num_xstreams;
 };
 
@@ -105,6 +106,7 @@ abt_io_instance_id abt_io_init(int backing_thread_count)
 
     aid->progress_pool = pool;
     aid->progress_xstreams = progress_xstreams;
+    aid->progress_scheds = progress_scheds;
 
     return aid;
 }
@@ -118,6 +120,7 @@ abt_io_instance_id abt_io_init_pool(ABT_pool progress_pool)
 
     aid->progress_pool = progress_pool;
     aid->progress_xstreams = NULL;
+    aid->progress_scheds = NULL;
     aid->num_xstreams = 0;
 
     return aid;
@@ -135,6 +138,7 @@ void abt_io_finalize(abt_io_instance_id aid)
         free(aid->progress_xstreams);
         // pool gets implicitly freed
     }
+    free(aid->progress_scheds);
 
     free(aid);
 }
@@ -198,6 +202,7 @@ static int issue_open(ABT_pool pool, abt_io_op_t *op, const char* pathname, int 
         op->free_fn = free;
     }
 
+    if(op == NULL) ABT_eventual_free(&pstate->eventual);
     return 0;
 err:
     if (pstate->eventual != NULL) ABT_eventual_free(&pstate->eventual);
@@ -287,6 +292,7 @@ static int issue_pread(ABT_pool pool, abt_io_op_t *op, int fd, void *buf,
         op->free_fn = free;
     }
 
+    if(op == NULL) ABT_eventual_free(&pstate->eventual);
     return 0;
 err:
     if (pstate->eventual != NULL) ABT_eventual_free(&pstate->eventual);
@@ -376,6 +382,7 @@ static int issue_read(ABT_pool pool, abt_io_op_t *op, int fd, void *buf,
         op->free_fn = free;
     }
 
+    if(op == NULL) ABT_eventual_free(&pstate->eventual);
     return 0;
 err:
     if (pstate->eventual != NULL) ABT_eventual_free(&pstate->eventual);
@@ -466,6 +473,7 @@ static int issue_pwrite(ABT_pool pool, abt_io_op_t *op, int fd, const void *buf,
         op->free_fn = free;
     }
 
+    if(op == NULL) ABT_eventual_free(&pstate->eventual);
     return 0;
 err:
     if (pstate->eventual != NULL) ABT_eventual_free(&pstate->eventual);
@@ -555,6 +563,7 @@ static int issue_write(ABT_pool pool, abt_io_op_t *op, int fd, const void *buf,
         op->free_fn = free;
     }
 
+    if(op == NULL) ABT_eventual_free(&pstate->eventual);
     return 0;
 err:
     if (pstate->eventual != NULL) ABT_eventual_free(&pstate->eventual);
@@ -645,6 +654,7 @@ static int issue_mkostemp(ABT_pool pool, abt_io_op_t *op, char* tpl, int flags, 
         op->free_fn = free;
     }
 
+    if(op == NULL) ABT_eventual_free(&pstate->eventual);
     return 0;
 err:
     if (pstate->eventual != NULL) ABT_eventual_free(&pstate->eventual);
@@ -726,6 +736,7 @@ static int issue_unlink(ABT_pool pool, abt_io_op_t *op, const char* pathname, in
         op->free_fn = free;
     }
 
+    if(op == NULL) ABT_eventual_free(&pstate->eventual);
     return 0;
 err:
     if (pstate->eventual != NULL) ABT_eventual_free(&pstate->eventual);
@@ -808,6 +819,7 @@ static int issue_close(ABT_pool pool, abt_io_op_t *op, int fd, int *ret)
         op->free_fn = free;
     }
 
+    if(op == NULL) ABT_eventual_free(&pstate->eventual);
     return 0;
 err:
     if (pstate->eventual != NULL) ABT_eventual_free(&pstate->eventual);
@@ -889,6 +901,7 @@ static int issue_fdatasync(ABT_pool pool, abt_io_op_t *op, int fd, int *ret)
         op->free_fn = free;
     }
 
+    if(op == NULL) ABT_eventual_free(&pstate->eventual);
     return 0;
 err:
     if (pstate->eventual != NULL) ABT_eventual_free(&pstate->eventual);
@@ -980,6 +993,7 @@ static int issue_fallocate(ABT_pool pool, abt_io_op_t *op, int fd, int mode, off
         op->free_fn = free;
     }
 
+    if(op == NULL) ABT_eventual_free(&pstate->eventual);
     return 0;
 err:
     if (pstate->eventual != NULL) ABT_eventual_free(&pstate->eventual);
