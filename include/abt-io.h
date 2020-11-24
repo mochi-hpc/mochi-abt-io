@@ -25,7 +25,6 @@ typedef struct abt_io_instance* abt_io_instance_id;
 struct abt_io_op;
 typedef struct abt_io_op abt_io_op_t;
 
-
 /**
  * Initializes abt_io library, using the specified number of backing threads. A
  * count of zero currently indicates that concurrent I/O progress is not made
@@ -53,131 +52,105 @@ abt_io_instance_id abt_io_init_pool(ABT_pool progress_pool)
  */
 void abt_io_finalize(abt_io_instance_id aid);
 
-/** 
+/**
  * wrapper for open()
  */
-int abt_io_open(
-        abt_io_instance_id aid,
-        const char* pathname,
-        int flags,
-        mode_t mode);
+int abt_io_open(abt_io_instance_id aid,
+                const char*        pathname,
+                int                flags,
+                mode_t             mode);
 
-/** 
+/**
  * non-blocking wrapper for open()
  */
-abt_io_op_t* abt_io_open_nb(
-        abt_io_instance_id aid,
-        const char* pathname,
-        int flags,
-        mode_t mode,
-        int *ret);
+abt_io_op_t* abt_io_open_nb(abt_io_instance_id aid,
+                            const char*        pathname,
+                            int                flags,
+                            mode_t             mode,
+                            int*               ret);
 
 /**
  * wrapper for pwrite()
  */
-ssize_t abt_io_pwrite(
-        abt_io_instance_id aid,
-        int fd,
-        const void *buf,
-        size_t count,
-        off_t offset);
+ssize_t abt_io_pwrite(abt_io_instance_id aid,
+                      int                fd,
+                      const void*        buf,
+                      size_t             count,
+                      off_t              offset);
 
 /**
  * non-blocking wrapper for pwrite()
  */
-abt_io_op_t* abt_io_pwrite_nb(
-        abt_io_instance_id aid,
-        int fd,
-        const void *buf,
-        size_t count,
-        off_t offset,
-        ssize_t *ret);
+abt_io_op_t* abt_io_pwrite_nb(abt_io_instance_id aid,
+                              int                fd,
+                              const void*        buf,
+                              size_t             count,
+                              off_t              offset,
+                              ssize_t*           ret);
 
 /**
  * wrapper for write()
  */
-ssize_t abt_io_write(
-        abt_io_instance_id aid,
-        int fd,
-        const void *buf,
-        size_t count);
+ssize_t
+abt_io_write(abt_io_instance_id aid, int fd, const void* buf, size_t count);
 
 /**
  * non-blocking wrapper for write()
  */
-abt_io_op_t* abt_io_write_nb(
-        abt_io_instance_id aid,
-        int fd,
-        const void *buf,
-        size_t count,
-        ssize_t *ret);
+abt_io_op_t* abt_io_write_nb(abt_io_instance_id aid,
+                             int                fd,
+                             const void*        buf,
+                             size_t             count,
+                             ssize_t*           ret);
 
 /**
  * wrapper for pread()
  */
 ssize_t abt_io_pread(
-        abt_io_instance_id aid,
-        int fd,
-        void *buf,
-        size_t count,
-        off_t offset);
+    abt_io_instance_id aid, int fd, void* buf, size_t count, off_t offset);
 
 /**
  * non-blocking wrapper for pread()
  */
-abt_io_op_t* abt_io_pread_nb(
-        abt_io_instance_id aid,
-        int fd,
-        void *buf,
-        size_t count,
-        off_t offset,
-        ssize_t *ret);
+abt_io_op_t* abt_io_pread_nb(abt_io_instance_id aid,
+                             int                fd,
+                             void*              buf,
+                             size_t             count,
+                             off_t              offset,
+                             ssize_t*           ret);
 
 /**
  * wrapper for read()
  */
-ssize_t abt_io_read(
-        abt_io_instance_id aid,
-        int fd,
-        void *buf,
-        size_t count);
+ssize_t abt_io_read(abt_io_instance_id aid, int fd, void* buf, size_t count);
 
 /**
  * non-blocking wrapper for read()
  */
 abt_io_op_t* abt_io_read_nb(
-        abt_io_instance_id aid,
-        int fd,
-        void *buf,
-        size_t count,
-        ssize_t *ret);
+    abt_io_instance_id aid, int fd, void* buf, size_t count, ssize_t* ret);
 
 /**
  * wrapper for mkostemp()
  */
-int abt_io_mkostemp(abt_io_instance_id aid, char *tpl, int flags);
+int abt_io_mkostemp(abt_io_instance_id aid, char* tpl, int flags);
 
 /**
  * non-blocking wrapper for mkostemp()
  */
-abt_io_op_t* abt_io_mkostemp_nb(
-        abt_io_instance_id aid,
-        char *tpl,
-        int flags,
-        int *ret);
+abt_io_op_t*
+abt_io_mkostemp_nb(abt_io_instance_id aid, char* tpl, int flags, int* ret);
 
-/** 
+/**
  * wrapper for unlink()
  */
-int abt_io_unlink(abt_io_instance_id aid, const char *pathname);
+int abt_io_unlink(abt_io_instance_id aid, const char* pathname);
 
-/** 
+/**
  * non-blocking wrapper for unlink()
  */
-abt_io_op_t* abt_io_unlink_nb(
-        abt_io_instance_id aid,
-        const char *pathname,
-        int *ret);
+abt_io_op_t*
+abt_io_unlink_nb(abt_io_instance_id aid, const char* pathname, int* ret);
 
 /**
  * wrapper for fdatasync()
@@ -187,7 +160,7 @@ int abt_io_fdatasync(abt_io_instance_id aid, int fd);
 /**
  * non-blocking wrapper for fdatasync()
  */
-abt_io_op_t* abt_io_fdatasync_nb(abt_io_instance_id aid, int fd, int *ret);
+abt_io_op_t* abt_io_fdatasync_nb(abt_io_instance_id aid, int fd, int* ret);
 
 /**
  * wrapper for close()
@@ -197,17 +170,23 @@ int abt_io_close(abt_io_instance_id aid, int fd);
 /**
  * non-blocking wrapper for close()
  */
-abt_io_op_t* abt_io_close_nb(abt_io_instance_id aid, int fd, int *ret);
+abt_io_op_t* abt_io_close_nb(abt_io_instance_id aid, int fd, int* ret);
 
 /**
  * wrapper for fallocate() (if available on this platform)
  */
-int abt_io_fallocate(abt_io_instance_id aid, int fd, int mode, off_t offset, off_t len);
+int abt_io_fallocate(
+    abt_io_instance_id aid, int fd, int mode, off_t offset, off_t len);
 
 /**
  * non-blocking wrapper for fallocate() (if available on this platform)
  */
-abt_io_op_t* abt_io_fallocate_nb(abt_io_instance_id aid, int fd, int mode, off_t offset, off_t len, int *ret);
+abt_io_op_t* abt_io_fallocate_nb(abt_io_instance_id aid,
+                                 int                fd,
+                                 int                mode,
+                                 off_t              offset,
+                                 off_t              len,
+                                 int*               ret);
 
 /**
  * wait on an abt-io operation
