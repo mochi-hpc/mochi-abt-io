@@ -164,8 +164,10 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
     aid->json_cfg = config;
     return aid;
 
-    /* TODO: fix error handling and labels */
 error:
+    if (config) json_object_put(config);
+    if (aid) free(aid);
+
     return ABT_IO_INSTANCE_NULL;
 }
 
@@ -196,6 +198,7 @@ void abt_io_finalize(abt_io_instance_id aid)
     }
 #endif
 
+    json_object_put(aid->json_cfg);
     free(aid);
 }
 
