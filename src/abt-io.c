@@ -17,9 +17,11 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <json-c/json.h>
 
 #include <abt.h>
 #include "abt-io.h"
+#include "abt-io-macros.h"
 
 struct abt_io_instance {
     ABT_pool     progress_pool;
@@ -34,8 +36,32 @@ struct abt_io_op {
     void (*free_fn)(void*);
 };
 
+/**
+ * Validates the format of the configuration and fills default values
+ * if they are not provided
+ */
+static int validate_and_complete_config(struct json_object* _config,
+                                        ABT_pool            _progress_pool);
+
 abt_io_instance_id abt_io_init(int backing_thread_count)
 {
+    char                    config[256];
+    struct abt_io_init_info args = {0};
+
+    if (backing_thread_count < 1) return ABT_IO_INSTANCE_NULL;
+
+    snprintf(config, 1024, "{ \"backing_thread_count\" : %d }",
+             backing_thread_count);
+
+    args.json_config = config;
+
+    return abt_io_init_ext(&args);
+}
+
+abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
+{
+    struct abt_io_init_info args   = {0};
+    struct json_object*     config = NULL;
     struct abt_io_instance* aid;
     ABT_pool                pool;
     ABT_xstream             self_xstream;
@@ -44,24 +70,45 @@ abt_io_instance_id abt_io_init(int backing_thread_count)
     int                     ret;
     int                     i;
 
-    if (backing_thread_count < 0) return NULL;
+    if (uargs) args = *uargs;
+
+    if (args.json_config) {
+        /* read JSON config from provided string argument */
+        struct json_tokener*    tokener = json_tokener_new();
+        enum json_tokener_error jerr;
+
+        config = json_tokener_parse_ex(tokener, args.json_config,
+                                       strlen(args.json_config));
+        if (!config) {
+            jerr = json_tokener_get_error(tokener);
+            fprintf(stderr, "JSON parse error: %s",
+                    json_tokener_error_desc(jerr));
+            json_tokener_free(tokener);
+            return ABT_IO_INSTANCE_NULL;
+        }
+        json_tokener_free(tokener);
+    } else {
+        /* create default JSON config */
+        config = json_object_new_object();
+    }
+
+    /* validate and complete configuration */
+    ret = validate_and_complete_config(config, args.progress_pool);
+    if (ret != 0) {
+        fprintf(stderr, "Could not validate and complete configuration");
+        goto error;
+    }
+
+    /* TODO: fill this in; at this point we can assume json is in canonical
+     * expanded form and create pool or take pointer to pool if needed, no
+     * further need to update json
+     */
 
     aid = malloc(sizeof(*aid));
     if (aid == NULL) return ABT_IO_INSTANCE_NULL;
 
-    if (backing_thread_count == 0) {
-        aid->num_xstreams = 0;
-        ret               = ABT_xstream_self(&self_xstream);
-        if (ret != ABT_SUCCESS) {
-            free(aid);
-            return ABT_IO_INSTANCE_NULL;
-        }
-        ret = ABT_xstream_get_main_pools(self_xstream, 1, &pool);
-        if (ret != ABT_SUCCESS) {
-            free(aid);
-            return ABT_IO_INSTANCE_NULL;
-        }
-    } else {
+#if 0
+    {
         aid->num_xstreams = backing_thread_count;
         progress_xstreams
             = malloc(backing_thread_count * sizeof(*progress_xstreams));
@@ -109,46 +156,41 @@ abt_io_instance_id abt_io_init(int backing_thread_count)
     aid->progress_pool     = pool;
     aid->progress_xstreams = progress_xstreams;
     aid->progress_scheds   = progress_scheds;
+#endif
 
+    /* TODO: fix error handling and labels */
     return aid;
-}
 
-abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* args)
-{
-    /* TODO: fill this in */
-    fprintf(stderr,
-            "WARNING: not implemented; passing through to abt_io_init().\n");
-    return (abt_io_init(1));
+error:
+    return ABT_IO_INSTANCE_NULL;
 }
 
 abt_io_instance_id abt_io_init_pool(ABT_pool progress_pool)
 {
-    struct abt_io_instance* aid;
+    struct abt_io_init_info args = {0};
 
-    aid = malloc(sizeof(*aid));
-    if (!aid) return (ABT_IO_INSTANCE_NULL);
+    args.progress_pool = progress_pool;
 
-    aid->progress_pool     = progress_pool;
-    aid->progress_xstreams = NULL;
-    aid->progress_scheds   = NULL;
-    aid->num_xstreams      = 0;
-
-    return aid;
+    return (abt_io_init_ext(&args));
 }
 
 void abt_io_finalize(abt_io_instance_id aid)
 {
     int i;
 
+    /* TODO: fix this to correctly handle if we don't own the pool */
+
+#if 0
     if (aid->num_xstreams) {
         for (i = 0; i < aid->num_xstreams; i++) {
             ABT_xstream_join(aid->progress_xstreams[i]);
             ABT_xstream_free(&aid->progress_xstreams[i]);
         }
         free(aid->progress_xstreams);
+        free(aid->progress_scheds);
         // pool gets implicitly freed
     }
-    free(aid->progress_scheds);
+#endif
 
     free(aid);
 }
@@ -1238,4 +1280,48 @@ char* abt_io_get_config(abt_io_instance_id aid)
     str = strdup("{}");
 
     return (str);
+}
+
+static int validate_and_complete_config(struct json_object* _config,
+                                        ABT_pool _custom_progress_pool)
+{
+    struct json_object* val;
+
+    /* ------- abt-io configuration examples ------
+     *
+     * optional input fields for convenience:
+     * --------------
+     * {"backing_thread_count": 16}
+     *
+     * canonical runtime json if pool is external:
+     * --------------
+     * {"internal_pool_flag": 0}
+     *
+     * canonical runtime json if pool is internal:
+     * --------------
+     * {"internal_pool_flag": 1,
+     *    "internal_pool":{
+     *       "kind":"fifo_wait",
+     *       "access":"mpmc",
+     *       "num_xstreams": 4
+     *    }
+     * }
+     */
+
+    /* TODO: local var for backing_thread_count set to default value */
+    /* TODO: if backing_thread_count set in json, then replace local var value
+     * and delete key */
+
+    if (_custom_progress_pool != ABT_POOL_NULL
+        && _custom_progress_pool != NULL) {
+        /* TODO: custom pool passed in; ignore backing_thread_count, set
+         * internal_pool_flag to zero in json, delete internal_pool object
+         * if present, emit warnings if things conflict
+         */
+    } else {
+        /* TODO: set up json to reflect internal pool */
+        /* TODO: emit warnigs if any json settings conflict */
+    }
+
+    return (0);
 }
