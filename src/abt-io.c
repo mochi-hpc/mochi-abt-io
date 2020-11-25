@@ -23,11 +23,14 @@
 #include "abt-io.h"
 #include "abt-io-macros.h"
 
+#define DEFAULT_BACKING_THREAD_COUNT 16
+
 struct abt_io_instance {
-    ABT_pool     progress_pool;
-    ABT_xstream* progress_xstreams;
-    ABT_sched*   progress_scheds;
-    int          num_xstreams;
+    ABT_pool            progress_pool;
+    ABT_xstream*        progress_xstreams;
+    ABT_sched*          progress_scheds;
+    int                 num_xstreams;
+    struct json_object* json_cfg;
 };
 
 struct abt_io_op {
@@ -158,9 +161,10 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
     aid->progress_scheds   = progress_scheds;
 #endif
 
-    /* TODO: fix error handling and labels */
+    aid->json_cfg = config;
     return aid;
 
+    /* TODO: fix error handling and labels */
 error:
     return ABT_IO_INSTANCE_NULL;
 }
@@ -1273,19 +1277,18 @@ size_t abt_io_get_pending_op_count(abt_io_instance_id aid)
 
 char* abt_io_get_config(abt_io_instance_id aid)
 {
-    char* str;
-
-    fprintf(stderr, "WARNING: not implemented; returning placeholder.\n");
-
-    str = strdup("{}");
-
-    return (str);
+    const char* content = json_object_to_json_string_ext(
+        aid->json_cfg,
+        JSON_C_TO_STRING_PRETTY | JSON_C_TO_STRING_NOSLASHESCAPE);
+    return strdup(content);
 }
 
 static int validate_and_complete_config(struct json_object* _config,
                                         ABT_pool _custom_progress_pool)
 {
     struct json_object* val;
+    struct json_object* _internal_pool;
+    int                 backing_thread_count = -1; /* sentinal value */
 
     /* ------- abt-io configuration examples ------
      *
@@ -1308,19 +1311,47 @@ static int validate_and_complete_config(struct json_object* _config,
      * }
      */
 
-    /* TODO: local var for backing_thread_count set to default value */
-    /* TODO: if backing_thread_count set in json, then replace local var value
-     * and delete key */
+    /* check if thread count convenience field is set */
+    if (CONFIG_HAS(_config, "backing_thread_count", val)) {
+        backing_thread_count = json_object_get_int(val);
+        /* delete it because we don't want this in the runtime json */
+        json_object_object_del(_config, "backing_thread_count");
+    }
 
     if (_custom_progress_pool != ABT_POOL_NULL
         && _custom_progress_pool != NULL) {
+        /* emit warning if backing_thread_count not sentinal value;
+         * conflicts with passing in pool
+         */
         /* TODO: custom pool passed in; ignore backing_thread_count, set
          * internal_pool_flag to zero in json, delete internal_pool object
          * if present, emit warnings if things conflict
          */
     } else {
-        /* TODO: set up json to reflect internal pool */
-        /* TODO: emit warnigs if any json settings conflict */
+        /* denote that abt-io is using it's own internal pool */
+        CONFIG_OVERRIDE_BOOL(_config, "internal_pool_flag", 1,
+                             "internal_pool_flag", 0);
+        /* create obj to describe internal pool */
+        CONFIG_HAS_OR_CREATE_OBJECT(_config, "internal_pool", "internal_pool",
+                                    _internal_pool);
+        if (CONFIG_HAS(_internal_pool, "num_xstreams", val)) {
+            if (backing_thread_count > 0) {
+                fprintf(stderr,
+                        "abt-io error: conflicting backing_thread_count and "
+                        "num_xstreams.\n");
+            }
+        } else {
+            if (backing_thread_count < 0)
+                backing_thread_count = DEFAULT_BACKING_THREAD_COUNT;
+            CONFIG_OVERRIDE_INTEGER(_internal_pool, "num_xstreams",
+                                    backing_thread_count,
+                                    "internal_pool.num_xstreams", 0);
+        }
+        /* TODO: allow different pool types? */
+        CONFIG_OVERRIDE_STRING(_internal_pool, "kind", "fifo_wait",
+                               "internal_pool.kind", 1);
+        CONFIG_OVERRIDE_STRING(_internal_pool, "access", "mpmc",
+                               "internal_pool.kind", 1);
     }
 
     return (0);
