@@ -1279,8 +1279,8 @@ static int validate_and_complete_config(struct json_object* _config,
         if (CONFIG_HAS(_internal_pool, "num_xstreams", val)) {
             if (backing_thread_count > 0) {
                 fprintf(stderr,
-                        "abt-io error: conflicting backing_thread_count and "
-                        "num_xstreams.\n");
+                        "abt-io warning: ignoring backing_thread_count in "
+                        "favor of num_xstreams.\n");
             }
         } else {
             if (backing_thread_count < 0)
