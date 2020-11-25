@@ -46,6 +46,13 @@ struct abt_io_op {
 static int validate_and_complete_config(struct json_object* _config,
                                         ABT_pool            _progress_pool);
 
+/**
+ * Set up pool (creating if needed) for abt-io instance to use
+ */
+static int setup_pool(abt_io_instance_id  aid,
+                      struct json_object* _config,
+                      ABT_pool            _progress_pool);
+
 abt_io_instance_id abt_io_init(int backing_thread_count)
 {
     char                    config[256];
@@ -66,12 +73,7 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
     struct abt_io_init_info args   = {0};
     struct json_object*     config = NULL;
     struct abt_io_instance* aid;
-    ABT_pool                pool;
-    ABT_xstream             self_xstream;
-    ABT_xstream*            progress_xstreams = NULL;
-    ABT_sched*              progress_scheds   = NULL;
     int                     ret;
-    int                     i;
 
     if (uargs) args = *uargs;
 
@@ -102,64 +104,11 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
         goto error;
     }
 
-    /* TODO: fill this in; at this point we can assume json is in canonical
-     * expanded form and create pool or take pointer to pool if needed, no
-     * further need to update json
-     */
-
     aid = malloc(sizeof(*aid));
-    if (aid == NULL) return ABT_IO_INSTANCE_NULL;
+    if (aid == NULL) goto error;
 
-#if 0
-    {
-        aid->num_xstreams = backing_thread_count;
-        progress_xstreams
-            = malloc(backing_thread_count * sizeof(*progress_xstreams));
-        if (progress_xstreams == NULL) {
-            free(aid);
-            return ABT_IO_INSTANCE_NULL;
-        }
-        progress_scheds
-            = malloc(backing_thread_count * sizeof(*progress_scheds));
-        if (progress_scheds == NULL) {
-            free(progress_xstreams);
-            free(aid);
-            return ABT_IO_INSTANCE_NULL;
-        }
-
-        ret = ABT_pool_create_basic(ABT_POOL_FIFO_WAIT, ABT_POOL_ACCESS_MPMC,
-                                    ABT_TRUE, &pool);
-        if (ret != ABT_SUCCESS) {
-            free(progress_xstreams);
-            free(progress_scheds);
-            free(aid);
-            return ABT_IO_INSTANCE_NULL;
-        }
-
-        for (i = 0; i < backing_thread_count; i++) {
-            ret = ABT_sched_create_basic(ABT_SCHED_BASIC_WAIT, 1, &pool,
-                                         ABT_SCHED_CONFIG_NULL,
-                                         &progress_scheds[i]);
-            if (ret != ABT_SUCCESS) {
-                free(progress_xstreams);
-                free(progress_scheds);
-                free(aid);
-                return ABT_IO_INSTANCE_NULL;
-            }
-            ret = ABT_xstream_create(progress_scheds[i], &progress_xstreams[i]);
-            if (ret != ABT_SUCCESS) {
-                free(progress_xstreams);
-                free(progress_scheds);
-                free(aid);
-                return ABT_IO_INSTANCE_NULL;
-            }
-        }
-    }
-
-    aid->progress_pool     = pool;
-    aid->progress_xstreams = progress_xstreams;
-    aid->progress_scheds   = progress_scheds;
-#endif
+    ret = setup_pool(aid, config, args.progress_pool);
+    if (ret != 0) goto error;
 
     aid->json_cfg = config;
     return aid;
@@ -1356,6 +1305,70 @@ static int validate_and_complete_config(struct json_object* _config,
         CONFIG_OVERRIDE_STRING(_internal_pool, "access", "mpmc",
                                "internal_pool.kind", 1);
     }
+
+    return (0);
+}
+
+static int setup_pool(abt_io_instance_id  aid,
+                      struct json_object* _config,
+                      ABT_pool            _progress_pool)
+{
+#if 0
+    ABT_pool                pool;
+    ABT_xstream             self_xstream;
+    ABT_xstream*            progress_xstreams = NULL;
+    ABT_sched*              progress_scheds   = NULL;
+    int                     i;
+
+    {
+        aid->num_xstreams = backing_thread_count;
+        progress_xstreams
+            = malloc(backing_thread_count * sizeof(*progress_xstreams));
+        if (progress_xstreams == NULL) {
+            free(aid);
+            return ABT_IO_INSTANCE_NULL;
+        }
+        progress_scheds
+            = malloc(backing_thread_count * sizeof(*progress_scheds));
+        if (progress_scheds == NULL) {
+            free(progress_xstreams);
+            free(aid);
+            return ABT_IO_INSTANCE_NULL;
+        }
+
+        ret = ABT_pool_create_basic(ABT_POOL_FIFO_WAIT, ABT_POOL_ACCESS_MPMC,
+                                    ABT_TRUE, &pool);
+        if (ret != ABT_SUCCESS) {
+            free(progress_xstreams);
+            free(progress_scheds);
+            free(aid);
+            return ABT_IO_INSTANCE_NULL;
+        }
+
+        for (i = 0; i < backing_thread_count; i++) {
+            ret = ABT_sched_create_basic(ABT_SCHED_BASIC_WAIT, 1, &pool,
+                                         ABT_SCHED_CONFIG_NULL,
+                                         &progress_scheds[i]);
+            if (ret != ABT_SUCCESS) {
+                free(progress_xstreams);
+                free(progress_scheds);
+                free(aid);
+                return ABT_IO_INSTANCE_NULL;
+            }
+            ret = ABT_xstream_create(progress_scheds[i], &progress_xstreams[i]);
+            if (ret != ABT_SUCCESS) {
+                free(progress_xstreams);
+                free(progress_scheds);
+                free(aid);
+                return ABT_IO_INSTANCE_NULL;
+            }
+        }
+    }
+
+    aid->progress_pool     = pool;
+    aid->progress_xstreams = progress_xstreams;
+    aid->progress_scheds   = progress_scheds;
+#endif
 
     return (0);
 }
