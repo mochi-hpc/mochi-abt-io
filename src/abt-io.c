@@ -1262,13 +1262,21 @@ static int validate_and_complete_config(struct json_object* _config,
 
     if (_custom_progress_pool != ABT_POOL_NULL
         && _custom_progress_pool != NULL) {
-        /* emit warning if backing_thread_count not sentinal value;
-         * conflicts with passing in pool
-         */
-        /* TODO: custom pool passed in; ignore backing_thread_count, set
-         * internal_pool_flag to zero in json, delete internal_pool object
-         * if present, emit warnings if things conflict
-         */
+        /* explicit pool provided by user overrides anything in json */
+        if (backing_thread_count > 0) {
+            fprintf(stderr,
+                    "abt-io warning: ignoring backing_thread_count because "
+                    "explicit pool was provided.\n");
+        }
+        if (CONFIG_HAS(_config, "internal_pool", val)) {
+            json_object_object_del(_config, "internal_pool");
+            fprintf(stderr,
+                    "abt-io warning: ignoring internal pool object because "
+                    "explicit pool was provided.\n");
+        }
+        /* denote that abt-io is _not_ using internal pool */
+        CONFIG_OVERRIDE_BOOL(_config, "internal_pool_flag", 0,
+                             "internal_pool_flag", 1);
     } else {
         /* denote that abt-io is using it's own internal pool */
         CONFIG_OVERRIDE_BOOL(_config, "internal_pool_flag", 1,
