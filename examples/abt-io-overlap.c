@@ -112,11 +112,14 @@ int main(int argc, char** argv)
     assert(ret == 0);
 
     if (common.opt_abt_io) {
+        struct abt_io_init_info info = {0};
+
         ret = ABT_xstream_create_helper(io_es_count, &io_pool, io_xstreams);
         assert(ret == 0);
 
         /* initialize abt_io */
-        common.aid = abt_io_init_pool(io_pool);
+        info.progress_pool = io_pool;
+        common.aid = abt_io_init_ext(&info);
         assert(common.aid != NULL);
     }
 
