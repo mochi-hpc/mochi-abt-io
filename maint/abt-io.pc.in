@@ -7,6 +7,6 @@ Name: abt-io
 Description: Argobots bindings for common POSIX I/O functions
 Version: 0.2
 URL: https://xgitlab.cels.anl.gov/sds/abt-io
-Requires: argobots
+Requires: argobots json-c
 Libs: -L${libdir} -labt-io
 Cflags: -I${includedir}

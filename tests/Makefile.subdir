@@ -2,11 +2,14 @@ EXTRA_DIST += \
  tests/concurrent-write-bench.sh 
 
 check_PROGRAMS += \
- tests/basic
+ tests/basic\
+ tests/abt-io-test-init-ext
 
 tests_basic_LDADD = src/libabt-io.la
+tests_abt_io_test_init_ext_LDADD = src/libabt-io.la
 
 TESTS += \
  tests/concurrent-write-bench.sh\
- tests/basic
+ tests/basic\
+ tests/abt-io-test-init-ext
 
