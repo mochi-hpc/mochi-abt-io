@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.67])
-AC_INIT([abt-io], [0.4], [],[],[]) 
+AC_INIT([abt-io], [0.5], [],[],[])
 AC_CONFIG_MACRO_DIRS([m4])
 LT_INIT
 
@@ -50,11 +50,11 @@ LIBS="$ARGOBOTS_LIBS $LIBS"
 CPPFLAGS="$ARGOBOTS_CFLAGS $CPPFLAGS"
 CFLAGS="$ARGOBOTS_CFLAGS $CFLAGS"
 
-PKG_CHECK_MODULES([MOCHICFG],[mochi-cfg],[],
-   [AC_MSG_ERROR([Could not find working mochi-cfg installation!])])
-LIBS="$MOCHICFG_LIBS $LIBS"
-CPPFLAGS="$MOCHICFG_CFLAGS $CPPFLAGS"
-CFLAGS="$MOCHICFG_CFLAGS $CFLAGS"
+PKG_CHECK_MODULES([JSONC],[json-c],[],
+   [AC_MSG_ERROR([Could not find working json-c installation!])])
+LIBS="$JSONC_LIBS $LIBS"
+CPPFLAGS="$JSONC_CFLAGS $CPPFLAGS"
+CFLAGS="$JSONC_CFLAGS -DMARGO_USE_JSON_C $CFLAGS"
 
 AC_MSG_CHECKING([for fallocate])
 AC_TRY_COMPILE([
