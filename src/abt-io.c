@@ -64,7 +64,7 @@ abt_io_instance_id abt_io_init(int backing_thread_count)
 
     if (backing_thread_count < 1) return ABT_IO_INSTANCE_NULL;
 
-    snprintf(config, 1024, "{ \"backing_thread_count\" : %d }",
+    snprintf(config, 256, "{ \"backing_thread_count\" : %d }",
              backing_thread_count);
 
     args.json_config = config;
