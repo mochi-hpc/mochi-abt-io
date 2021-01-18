@@ -4,6 +4,9 @@
  * See COPYRIGHT in top-level directory.
  */
 
+#ifndef __ABT_IO_MACROS
+#define __ABT_IO_MACROS
+
 static const int json_type_int64 = json_type_int;
 
 // Can be used in configurations to check if a JSON object has a particular
@@ -86,3 +89,5 @@ static const int json_type_int64 = json_type_int;
         _tmp = json_object_new_string(__value);                               \
         json_object_object_add(__config, __key, _tmp);                        \
     } while (0)
+
+#endif /* __ABT_IO_MACROS */
