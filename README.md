@@ -19,14 +19,13 @@ Margo: https://xgitlab.cels.anl.gov/sds/margo
 
 ##  Dependencies
 
-* argobots (origin/master):
-  (git://git.mcs.anl.gov/argo/argobots.git)
+* argobots (https://github.com/pmodels/argobots)
 
 ## Building Argobots (dependency)
 
 Example configuration:
 
-    ../configure --prefix=/home/pcarns/working/install 
+    ../configure --prefix=/home/pcarns/working/install
 
 ## Building
 
