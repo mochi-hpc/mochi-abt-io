@@ -1,12 +1,22 @@
 # abt-io
 
 abt-io provides Argobots-aware wrappers to common POSIX I/O
-functions.  The wrappers behave identically to their POSIX counterparts from
-a caller's point of view, but internally they delegate I/O system calls to a
-dedicated Argobots pool.  The caller is suspended until the system call
-completes so that other concurrent ULTs can make progress in the mean time.
+functions.
 
-If multiple I/O operations are issued at the same time then they will make
+Argobots (https://github.com/pmodels/argobots) is a threading package
+that provides light-weight _non-preemptable_ user-level threads.  This
+means that if an Argobots thread executes a blocking I/O system call
+directly, it will block forward progress for all threads on that execution
+stream until that blocking I/O system call completes.
+
+The abt-io library addresses this problem by providing a set of wrapper
+functions that delegate blocking I/O system calls to a dedicated set
+of execution streams (i.e. pthreads) that perform the I/O operation on
+behalf of the caller.  User level threads that invoke these wrappers
+will yield control until the I/O operation completes, allowing other
+user-level threads to continue execution.
+
+If multiple I/O operations are issued at the same time, then they will make
 progress concurrently according to the number of execution streams assigned
 to abt-io.
 
@@ -61,3 +71,5 @@ system with a level of concurrency determined by the number of execution
 streams in the abt-io pool.  This is similar to aio functionality but with a
 simpler interface and less serialization.
 
+Additional details and performance analysis can be found in
+https://ieeexplore.ieee.org/document/8082139.
