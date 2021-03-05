@@ -22,6 +22,7 @@
 
 char* readfile(const char* filename) {
     FILE *f = fopen(filename, "r");
+    int ret;
     if(!f) {
         perror("fopen");
         fprintf(stderr, "\tCould not open json file \"%s\"\n", filename);
@@ -31,7 +32,12 @@ char* readfile(const char* filename) {
     long fsize = ftell(f);
     fseek(f, 0, SEEK_SET);
     char* string = malloc(fsize + 1);
-    fread(string, 1, fsize, f);
+    ret = fread(string, 1, fsize, f);
+    if(ret < 0) {
+        perror("fread");
+        fprintf(stderr, "\tCould not read json file \"%s\"\n", filename);
+        exit(EXIT_FAILURE);
+    }
     fclose(f);
     string[fsize] = 0;
     return string;

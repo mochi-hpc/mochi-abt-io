@@ -81,7 +81,7 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
 
     if (uargs) args = *uargs;
 
-    if (args.json_config) {
+    if (args.json_config && strlen(args.json_config) > 0) {
         /* read JSON config from provided string argument */
         struct json_tokener*    tokener = json_tokener_new();
         enum json_tokener_error jerr;
@@ -1251,6 +1251,9 @@ static int validate_and_complete_config(struct json_object* _config,
      *    }
      * }
      */
+
+    /* report version number for this component */
+    CONFIG_OVERRIDE_STRING(_config, "version", PACKAGE_VERSION, "version", 1);
 
     /* check if thread count convenience field is set */
     if (CONFIG_HAS(_config, "backing_thread_count", val)) {
