@@ -93,6 +93,13 @@ int main(int argc, char** argv)
     ABT_sched    self_sched;
     ABT_xstream  self_xstream;
 
+#ifndef HAVE_ODIRECT
+    printf("# WARNING: O_DIRECT not supported on this platform.  Disabled for this test.\n");
+#endif
+#ifndef HAVE_FALLOCATE
+    printf("# WARNING: fallocate() not supported on this platform.  Disabled for this test.\n");
+#endif
+
     ABT_init(argc, argv);
 
     /* set caller (self) ES to sleep when idle by using SCHED_BASIC_WAIT */
@@ -209,8 +216,10 @@ static void abt_bench(int           buffer_per_thread,
         perror("open");
         assert(0);
     }
+#ifdef HAVE_FALLOCATE
     ret = fallocate(fd, 0, 0, 10737418240UL);
     assert(ret == 0);
+#endif
 
     tid_array = malloc(concurrency * sizeof(*tid_array));
     assert(tid_array);
@@ -321,8 +330,10 @@ static void abt_bench_nb(int           buffer_per_thread,
         perror("open");
         assert(0);
     }
+#ifdef HAVE_FALLOCATE
     ret = fallocate(fd, 0, 0, 10737418240UL);
     assert(ret == 0);
+#endif
 
     /* initialize abt_io */
     /* NOTE: for now we are going to use the same number of execution streams
@@ -413,8 +424,10 @@ static void pthread_bench(int           buffer_per_thread,
         perror("open");
         assert(0);
     }
+#ifdef HAVE_FALLOCATE
     ret = fallocate(fd, 0, 0, 10737418240UL);
     assert(ret == 0);
+#endif
 
     id_array = malloc(concurrency * sizeof(*id_array));
     assert(id_array);
