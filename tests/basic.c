@@ -61,6 +61,10 @@ int main(int argc, char** argv)
     ret = abt_io_close(aid, fd);
     assert(ret == 0);
 
+    struct stat statbuf;
+    ret = abt_io_stat(aid, template, &statbuf);
+    assert(ret == 0);
+
     ret = abt_io_unlink(aid, template);
     assert(ret == 0);
 
@@ -70,4 +74,3 @@ int main(int argc, char** argv)
 
     return (0);
 }
-

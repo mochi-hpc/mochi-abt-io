@@ -237,6 +237,11 @@ abt_io_op_t* abt_io_fallocate_nb(abt_io_instance_id aid,
                                  int*               ret);
 
 /**
+ * wrapper for stat(2)
+ */
+int abt_io_stat(abt_io_instance_id aid, char* pathname, struct stat* statbuf);
+
+/**
  * wait on an abt-io operation
  * return: 0 if success, non-zero on failure
  */
