@@ -248,6 +248,10 @@ int abt_io_stat(abt_io_instance_id aid, char* pathname, struct stat* statbuf);
 int abt_io_statfs(abt_io_instance_id aid, char* path, struct statfs* statfsbuf);
 
 /**
+ * wrapper for truncate(2)
+ */
+int abt_io_truncate(abt_io_instance_id aid, char* path, off_t length);
+/**
  * wait on an abt-io operation
  * return: 0 if success, non-zero on failure
  */

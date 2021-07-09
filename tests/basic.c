@@ -59,6 +59,9 @@ int main(int argc, char** argv)
                            0, sizeof(fd));
     assert(ret == 0);
 
+    ret = abt_io_truncate(aid, template, 1024);
+    assert(ret == 0);
+
     ret = abt_io_close(aid, fd);
     assert(ret == 0);
 
