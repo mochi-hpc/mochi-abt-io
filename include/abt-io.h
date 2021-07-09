@@ -13,6 +13,7 @@ extern "C" {
 
 #include <abt.h>
 #include <sys/types.h>
+#include <sys/vfs.h>
 #include <stdlib.h>
 
 #define DEPRECATED(msg) __attribute__((deprecated(msg)))
@@ -240,6 +241,11 @@ abt_io_op_t* abt_io_fallocate_nb(abt_io_instance_id aid,
  * wrapper for stat(2)
  */
 int abt_io_stat(abt_io_instance_id aid, char* pathname, struct stat* statbuf);
+
+/**
+ * wrapper for statfs(2)
+ */
+int abt_io_statfs(abt_io_instance_id aid, char* path, struct statfs* statfsbuf);
 
 /**
  * wait on an abt-io operation

@@ -9,6 +9,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/statfs.h>
 #include <fcntl.h>
 #include <float.h>
 #include <errno.h>
@@ -63,6 +64,10 @@ int main(int argc, char** argv)
 
     struct stat statbuf;
     ret = abt_io_stat(aid, template, &statbuf);
+    assert(ret == 0);
+
+    struct statfs statfsbuf;
+    ret = abt_io_statfs(aid, template, &statfsbuf);
     assert(ret == 0);
 
     ret = abt_io_unlink(aid, template);
