@@ -16,6 +16,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/vfs.h>
 #include <fcntl.h>
 #include <json-c/json.h>
 
@@ -1188,6 +1189,254 @@ abt_io_op_t* abt_io_fallocate_nb(
         return NULL;
     } else
         return op;
+}
+
+struct abt_io_statfs_state {
+    int*           ret;
+    char*          pathname;
+    struct statfs* statfsbuf;
+    ABT_eventual   eventual;
+};
+
+static void abt_io_statfs_fn(void* foo)
+{
+    struct abt_io_statfs_state* state = foo;
+
+    *state->ret = statfs(state->pathname, state->statfsbuf);
+    if (*state->ret < 0) *state->ret = -errno;
+
+    ABT_eventual_set(state->eventual, NULL, 0);
+    return;
+}
+
+static int issue_statfs(ABT_pool       pool,
+                        abt_io_op_t*   op,
+                        char*          pathname,
+                        struct statfs* statfsbuf,
+                        int*           ret)
+{
+    struct abt_io_statfs_state  state;
+    struct abt_io_statfs_state* pstate = NULL;
+    int                         rc;
+
+    if (op == NULL)
+        pstate = &state;
+    else {
+        pstate = malloc(sizeof(*pstate));
+        if (pstate == NULL) {
+            *ret = -ENOMEM;
+            goto err;
+        }
+    }
+
+    *ret              = -ENOSYS;
+    pstate->ret       = ret;
+    pstate->pathname  = pathname;
+    pstate->statfsbuf = statfsbuf;
+    pstate->eventual  = NULL;
+    rc                = ABT_eventual_create(0, &pstate->eventual);
+    if (rc != ABT_SUCCESS) {
+        *ret = -ENOMEM;
+        goto err;
+    }
+
+    if (op != NULL) op->e = pstate->eventual;
+
+    rc = ABT_task_create(pool, abt_io_statfs_fn, pstate, NULL);
+    if (rc != ABT_SUCCESS) {
+        *ret = -EINVAL;
+        goto err;
+    }
+
+    if (op == NULL) {
+        rc = ABT_eventual_wait(pstate->eventual, NULL);
+        if (rc != ABT_SUCCESS) {
+            *ret = -EINVAL;
+            goto err;
+        }
+    } else {
+        op->e       = pstate->eventual;
+        op->state   = pstate;
+        op->free_fn = free;
+    }
+    if (op == NULL) ABT_eventual_free(&pstate->eventual);
+    return 0;
+err:
+    if (pstate->eventual != NULL) ABT_eventual_free(&pstate->eventual);
+    if (pstate != NULL && op != NULL) free(pstate);
+    return -1;
+}
+
+int abt_io_statfs(abt_io_instance_id aid,
+                  char*              pathname,
+                  struct statfs*     statfsbuf)
+{
+    int ret = -1;
+    issue_statfs(aid->progress_pool, NULL, pathname, statfsbuf, &ret);
+    return ret;
+}
+
+struct abt_io_stat_state {
+    int*         ret;
+    char*        pathname;
+    struct stat* statbuf;
+    ABT_eventual eventual;
+};
+
+static void abt_io_stat_fn(void* foo)
+{
+    struct abt_io_stat_state* state = foo;
+
+    *state->ret = stat(state->pathname, state->statbuf);
+    if (*state->ret < 0) *state->ret = -errno;
+
+    ABT_eventual_set(state->eventual, NULL, 0);
+    return;
+}
+
+static int issue_stat(ABT_pool     pool,
+                      abt_io_op_t* op,
+                      char*        pathname,
+                      struct stat* statbuf,
+                      int*         ret)
+{
+    struct abt_io_stat_state  state;
+    struct abt_io_stat_state* pstate = NULL;
+    int                       rc;
+
+    if (op == NULL)
+        pstate = &state;
+    else {
+        pstate = malloc(sizeof(*pstate));
+        if (pstate == NULL) {
+            *ret = -ENOMEM;
+            goto err;
+        }
+    }
+
+    *ret             = -ENOSYS;
+    pstate->ret      = ret;
+    pstate->pathname = pathname;
+    pstate->statbuf  = statbuf;
+    pstate->eventual = NULL;
+    rc               = ABT_eventual_create(0, &pstate->eventual);
+    if (rc != ABT_SUCCESS) {
+        *ret = -ENOMEM;
+        goto err;
+    }
+
+    if (op != NULL) op->e = pstate->eventual;
+
+    rc = ABT_task_create(pool, abt_io_stat_fn, pstate, NULL);
+    if (rc != ABT_SUCCESS) {
+        *ret = -EINVAL;
+        goto err;
+    }
+
+    if (op == NULL) {
+        rc = ABT_eventual_wait(pstate->eventual, NULL);
+        if (rc != ABT_SUCCESS) {
+            *ret = -EINVAL;
+            goto err;
+        }
+    } else {
+        op->e       = pstate->eventual;
+        op->state   = pstate;
+        op->free_fn = free;
+    }
+    if (op == NULL) ABT_eventual_free(&pstate->eventual);
+    return 0;
+err:
+    if (pstate->eventual != NULL) ABT_eventual_free(&pstate->eventual);
+    if (pstate != NULL && op != NULL) free(pstate);
+    return -1;
+}
+
+int abt_io_stat(abt_io_instance_id aid, char* pathname, struct stat* statbuf)
+{
+    int ret = -1;
+    issue_stat(aid->progress_pool, NULL, pathname, statbuf, &ret);
+    return ret;
+}
+
+struct abt_io_truncate_state {
+    int*         ret;
+    char*        pathname;
+    off_t        length;
+    ABT_eventual eventual;
+};
+
+static void abt_io_truncate_fn(void* foo)
+{
+    struct abt_io_truncate_state* state = foo;
+
+    *state->ret = truncate(state->pathname, state->length);
+    if (*state->ret < 0) *state->ret = -errno;
+
+    ABT_eventual_set(state->eventual, NULL, 0);
+    return;
+}
+
+static int issue_truncate(
+    ABT_pool pool, abt_io_op_t* op, char* pathname, off_t offset, int* ret)
+{
+    struct abt_io_truncate_state  state;
+    struct abt_io_truncate_state* pstate = NULL;
+    int                           rc;
+
+    if (op == NULL)
+        pstate = &state;
+    else {
+        pstate = malloc(sizeof(*pstate));
+        if (pstate == NULL) {
+            *ret = -ENOMEM;
+            goto err;
+        }
+    }
+
+    *ret             = -ENOSYS;
+    pstate->ret      = ret;
+    pstate->pathname = pathname;
+    pstate->length   = offset;
+    pstate->eventual = NULL;
+    rc               = ABT_eventual_create(0, &pstate->eventual);
+    if (rc != ABT_SUCCESS) {
+        *ret = -ENOMEM;
+        goto err;
+    }
+
+    if (op != NULL) op->e = pstate->eventual;
+
+    rc = ABT_task_create(pool, abt_io_truncate_fn, pstate, NULL);
+    if (rc != ABT_SUCCESS) {
+        *ret = -EINVAL;
+        goto err;
+    }
+
+    if (op == NULL) {
+        rc = ABT_eventual_wait(pstate->eventual, NULL);
+        if (rc != ABT_SUCCESS) {
+            *ret = -EINVAL;
+            goto err;
+        }
+    } else {
+        op->e       = pstate->eventual;
+        op->state   = pstate;
+        op->free_fn = free;
+    }
+    if (op == NULL) ABT_eventual_free(&pstate->eventual);
+    return 0;
+err:
+    if (pstate->eventual != NULL) ABT_eventual_free(&pstate->eventual);
+    if (pstate != NULL && op != NULL) free(pstate);
+    return -1;
+}
+
+int abt_io_truncate(abt_io_instance_id aid, char* pathname, off_t offset)
+{
+    int ret = -1;
+    issue_truncate(aid->progress_pool, NULL, pathname, offset, &ret);
+    return ret;
 }
 
 int abt_io_op_wait(abt_io_op_t* op)
