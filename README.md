@@ -25,7 +25,7 @@ capability, but for the Mercury RPC library).  When used with Margo it
 prevents RPC handlers (callbacks) from blocking on I/O operations, thereby
 improving RPC throughput.
 
-Margo: https://xgitlab.cels.anl.gov/sds/margo
+Margo: https://github.com/mochi-hpc/mochi-margo
 
 ##  Dependencies
 
