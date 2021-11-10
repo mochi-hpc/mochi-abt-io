@@ -17,6 +17,30 @@
 #include <abt.h>
 #include <abt-io.h>
 
+char* readfile(const char* filename) {
+    FILE *f = fopen(filename, "r");
+    int ret;
+    if(!f) {
+        perror("fopen");
+        fprintf(stderr, "\tCould not open json file \"%s\"\n", filename);
+        exit(EXIT_FAILURE);
+    }
+    fseek(f, 0, SEEK_END);
+    long fsize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char* string = malloc(fsize + 1);
+    ret = fread(string, 1, fsize, f);
+    if(ret < 0) {
+        perror("fread");
+        fprintf(stderr, "\tCould not read json file \"%s\"\n", filename);
+        exit(EXIT_FAILURE);
+    }
+    fclose(f);
+    string[fsize] = 0;
+    return string;
+}
+
+
 /* test program to exercise a few basic abt-io functions */
 
 int main(int argc, char** argv)
@@ -25,15 +49,13 @@ int main(int argc, char** argv)
     ABT_sched          self_sched;
     ABT_xstream        self_xstream;
     abt_io_instance_id aid;
+    struct abt_io_init_info args = { 0 };
     int                fd;
     char template[64];
 
     ABT_init(argc, argv);
 
-    if (argc != 1) {
-        fprintf(stderr, "Error: this program accepts no arguments.\n");
-        return (-1);
-    }
+    args.json_config = argc > 1 ? readfile (argv[1]) : NULL;
 
     /* set caller (self) ES to sleep when idle by using SCHED_BASIC_WAIT */
     ret = ABT_sched_create_basic(ABT_SCHED_BASIC_WAIT, 0, NULL,
@@ -45,7 +67,11 @@ int main(int argc, char** argv)
     assert(ret == ABT_SUCCESS);
 
     /* start up abt-io */
-    aid = abt_io_init(2);
+    if (args.json_config == NULL)
+        aid = abt_io_init(2);
+    else
+        aid = abt_io_init_ext(&args);
+
     assert(aid != NULL);
 
     sprintf(template, "/tmp/XXXXXX");
