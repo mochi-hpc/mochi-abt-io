@@ -56,7 +56,7 @@ int main(int argc, char** argv)
     assert(ret == sizeof(fd));
 
     ret = abt_io_fallocate(aid, fd, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
-                           0, sizeof(fd));
+                           sizeof(fd), sizeof(fd));
     assert(ret == 0);
 
     ret = abt_io_truncate(aid, template, 1024);
