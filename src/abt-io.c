@@ -31,6 +31,8 @@ struct abt_io_instance {
     ABT_xstream*        progress_xstreams;
     int                 num_xstreams;
     struct json_object* json_cfg;
+    int                 do_null_io_read;
+    int                 do_null_io_write;
 };
 
 struct abt_io_op {
@@ -111,6 +113,12 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
 
     aid = malloc(sizeof(*aid));
     if (aid == NULL) goto error;
+
+    aid->do_null_io_write
+        = json_object_get_int(json_object_object_get(config, "null_io_write"));
+
+    aid->do_null_io_read
+        = json_object_get_int(json_object_object_get(config, "null_io_read"));
 
     ret = setup_pool(aid, config, args.progress_pool);
     if (ret != 0) goto error;
@@ -268,8 +276,12 @@ static void abt_io_pread_fn(void* foo)
 {
     struct abt_io_pread_state* state = foo;
 
-    *state->ret = pread(state->fd, state->buf, state->count, state->offset);
-    if (*state->ret < 0) *state->ret = -errno;
+    if (state->aid->do_null_io_read)
+        *state->ret = state->count; // uh-oh won't be able to detect end of file
+    else {
+        *state->ret = pread(state->fd, state->buf, state->count, state->offset);
+        if (*state->ret < 0) *state->ret = -errno;
+    }
 
     ABT_eventual_set(state->eventual, NULL, 0);
     return;
@@ -382,8 +394,12 @@ static void abt_io_read_fn(void* foo)
 {
     struct abt_io_read_state* state = foo;
 
-    *state->ret = read(state->fd, state->buf, state->count);
-    if (*state->ret < 0) *state->ret = -errno;
+    if (state->aid->do_null_io_read)
+        *state->ret = state->count;
+    else {
+        *state->ret = read(state->fd, state->buf, state->count);
+        if (*state->ret < 0) *state->ret = -errno;
+    }
 
     ABT_eventual_set(state->eventual, NULL, 0);
     return;
@@ -490,8 +506,13 @@ static void abt_io_pwrite_fn(void* foo)
 {
     struct abt_io_pwrite_state* state = foo;
 
-    *state->ret = pwrite(state->fd, state->buf, state->count, state->offset);
-    if (*state->ret < 0) *state->ret = -errno;
+    if (state->aid->do_null_io_write)
+        *state->ret = state->count;
+    else {
+        *state->ret
+            = pwrite(state->fd, state->buf, state->count, state->offset);
+        if (*state->ret < 0) *state->ret = -errno;
+    }
 
     ABT_eventual_set(state->eventual, NULL, 0);
     return;
@@ -604,8 +625,12 @@ static void abt_io_write_fn(void* foo)
 {
     struct abt_io_write_state* state = foo;
 
-    *state->ret = write(state->fd, state->buf, state->count);
-    if (*state->ret < 0) *state->ret = -errno;
+    if (state->aid->do_null_io_write)
+        *state->ret = state->count;
+    else {
+        *state->ret = write(state->fd, state->buf, state->count);
+        if (*state->ret < 0) *state->ret = -errno;
+    }
 
     ABT_eventual_set(state->eventual, NULL, 0);
     return;
@@ -1515,6 +1540,15 @@ static int validate_and_complete_config(struct json_object* _config,
 
     /* ------- abt-io configuration examples ------
      *
+     * tuning and debugging flags
+     * --------------
+     *  "null_io" is a trick we learned in PVFS:  operations return immediately
+     *  allowing us to look for performance problems in the rest of the code
+     *  paths.  I'm splitting "read" and "write" because some workloads, like
+     *  writing to an HDF5 file, read a dataset before writing
+     * {"null_io_write": false}
+     * {"null_io_read": false}
+     *
      * optional input fields for convenience:
      * --------------
      * {"backing_thread_count": 16}
@@ -1537,6 +1571,13 @@ static int validate_and_complete_config(struct json_object* _config,
     /* report version number for this component */
     CONFIG_OVERRIDE_STRING(_config, "version", PACKAGE_VERSION, "version", 1);
 
+    if (!CONFIG_HAS(_config, "null_io_write", val)) {
+        CONFIG_OVERRIDE_BOOL(_config, "null_io_write", 0, "null_io_write", 0);
+    }
+
+    if (!CONFIG_HAS(_config, "null_io_read", val)) {
+        CONFIG_OVERRIDE_BOOL(_config, "null_io_read", 0, "null_io_read", 0);
+    }
     /* check if thread count convenience field is set */
     if (CONFIG_HAS(_config, "backing_thread_count", val)) {
         backing_thread_count = json_object_get_int(val);
