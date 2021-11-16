@@ -79,7 +79,7 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
 {
     struct abt_io_init_info args   = {0};
     struct json_object*     config = NULL;
-    struct abt_io_instance* aid;
+    struct abt_io_instance* aid    = NULL;
     int                     ret;
 
     if (uargs) args = *uargs;
