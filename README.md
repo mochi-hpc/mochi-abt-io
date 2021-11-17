@@ -73,3 +73,22 @@ simpler interface and less serialization.
 
 Additional details and performance analysis can be found in
 https://ieeexplore.ieee.org/document/8082139.
+
+## Tracing
+If you enable tracing, either by setting the ` "trace_io":true,` in the json
+config, or by setting the environment variable `ABT_IO_TRACE_IO`, abt-io will log
+to stderr the i/o operations it is doing in Darshan "DXT format": for example
+
+
+```
+% ./tests/basic abt.json
+#Module Rank    Op      Segment Offset  Length  Start(s)        End(s)
+X_ABTIO -1      mkostemp        -1      0       0       0.025596        0.025698
+X_ABTIO -1      pwrite  -1      0       4       0.025736        0.025801
+X_ABTIO -1      fallocate       -1      4       4       0.025843        0.026262
+X_ABTIO -1      truncate        -1      0       1024    0.026305        0.026336
+X_ABTIO -1      close   -1      0       0       0.026460        0.026494
+X_ABTIO -1      stat    -1      0       0       0.026542        0.026568
+X_ABTIO -1      statfs  -1      0       0       0.026603        0.026608
+X_ABTIO -1      unlink  -1      0       0       0.026662        0.026737
+```
