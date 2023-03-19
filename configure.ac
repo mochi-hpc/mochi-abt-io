@@ -121,6 +121,7 @@ AC_MSG_RESULT(no))
 # zlib is used for benchmark output file
 CHECK_ZLIB
 
+build_liburing=no
 AC_ARG_ENABLE(liburing,
         [AS_HELP_STRING([--enable-liburing],[Enable liburing library support @<:@default=no@:>@])],
         [case "${enableval}" in
@@ -138,10 +139,12 @@ if test "$enable_liburing" = "yes"; then
         CPPFLAGS="$LIBURING_CFLAGS $CPPFLAGS"
         CFLAGS="$LIBURING_CFLAGS $CFLAGS"
         LIBS="$LIBURING_LIBS $LIBS"
+        build_liburing=yes
 else
         USE_LIBURING=0
 fi
 AC_SUBST(USE_LIBURING)
+AM_CONDITIONAL([BUILD_LIBURING], [test "x${build_liburing}" = xyes])
 
 AC_CONFIG_FILES([Makefile maint/abt-io.pc])
 AC_OUTPUT

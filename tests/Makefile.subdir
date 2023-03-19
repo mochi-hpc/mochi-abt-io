@@ -1,6 +1,7 @@
 EXTRA_DIST += \
- tests/concurrent-write-bench.sh\\
- tests/abt-io-benchmark.sh
+ tests/concurrent-write-bench.sh\
+ tests/abt-io-benchmark.sh\
+ tests/basic-uring.sh
 
 check_PROGRAMS += \
  tests/basic\
@@ -15,3 +16,6 @@ TESTS += \
  tests/abt-io-test-init-ext\
  tests/abt-io-benchmark.sh
 
+if BUILD_LIBURING
+ TESTS += tests/basic-uring.sh
+endif
