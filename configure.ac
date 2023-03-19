@@ -121,6 +121,28 @@ AC_MSG_RESULT(no))
 # zlib is used for benchmark output file
 CHECK_ZLIB
 
+AC_ARG_ENABLE(liburing,
+        [AS_HELP_STRING([--enable-liburing],[Enable liburing library support @<:@default=no@:>@])],
+        [case "${enableval}" in
+         yes) enable_liburing="yes" ;;
+         no) enable_liburing="no" ;;
+         *) AC_MSG_ERROR(bad value ${enableval} for --enable-liburing) ;;
+ esac],
+ [enable_liburing="no"]
+ )
+AM_CONDITIONAL(ENABLE_LIBURING, test x$enable_liburing = xyes)
+if test "$enable_liburing" = "yes"; then
+        PKG_CHECK_MODULES(LIBURING, liburing)
+        AC_DEFINE(USE_LIBURING, 1, [LIBURING support enabled.])
+        USE_LIBURING=1
+        CPPFLAGS="$LIBURING_CFLAGS $CPPFLAGS"
+        CFLAGS="$LIBURING_CFLAGS $CFLAGS"
+        LIBS="$LIBURING_LIBS $LIBS"
+else
+        USE_LIBURING=0
+fi
+AC_SUBST(USE_LIBURING)
+
 AC_CONFIG_FILES([Makefile maint/abt-io.pc])
 AC_OUTPUT
 
