@@ -19,12 +19,21 @@
 #include <sys/vfs.h>
 #include <fcntl.h>
 #include <json-c/json.h>
+#ifdef USE_LIBURING
+    #include <liburing.h>
+#endif
 
 #include <abt.h>
 #include "abt-io.h"
 #include "abt-io-macros.h"
 
 #define DEFAULT_BACKING_THREAD_COUNT 16
+#define DEFAULT_URING_ENTRIES        64
+
+enum abt_io_engine_type {
+    ABT_IO_ENGINE_POSIX = 1,
+    ABT_IO_ENGINE_LIBURING
+};
 
 struct abt_io_instance {
     ABT_pool            progress_pool;
@@ -35,6 +44,10 @@ struct abt_io_instance {
     int                 do_null_io_write;
     int                 logging_enabled; /* debugging: log every i/o call? */
     double epoch_start; /* i/o logs will report time relative to this */
+    enum abt_io_engine_type engine_type;
+#ifdef USE_LIBURING
+    struct io_uring ring;
+#endif
 };
 
 struct abt_io_op {
@@ -120,6 +133,25 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
     aid = malloc(sizeof(*aid));
     if (aid == NULL) goto error;
 
+    struct json_object* jengine = json_object_object_get(config, "engine");
+    if (strcmp(json_object_get_string(jengine), "posix") == 0)
+        aid->engine_type = ABT_IO_ENGINE_POSIX;
+    else if (strcmp(json_object_get_string(jengine), "liburing") == 0) {
+#ifndef USE_LIBURING
+        fprintf(stderr,
+                "Error: requested \"engine\"=\"liburing\" but abt-io was not "
+                "compiled with liburing support.\n");
+        goto error;
+#else
+        aid->engine_type = ABT_IO_ENGINE_LIBURING;
+        ret = io_uring_queue_init(DEFAULT_URING_ENTRIES, &aid->ring, 0);
+        if (ret != 0) {
+            fprintf(stderr, "Error: io_uring_queue_init() failure.\n");
+            goto error;
+        }
+#endif
+    }
+
     aid->do_null_io_write
         = json_object_get_int(json_object_object_get(config, "null_io_write"));
     aid->do_null_io_read
@@ -163,6 +195,10 @@ void abt_io_finalize(abt_io_instance_id aid)
 {
     teardown_pool(aid);
     json_object_put(aid->json_cfg);
+#ifdef USE_LIBURING
+    if (aid->engine_type == ABT_IO_ENGINE_LIBURING)
+        io_uring_queue_exit(&aid->ring);
+#endif
     free(aid);
 }
 
