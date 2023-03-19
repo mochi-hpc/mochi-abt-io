@@ -117,4 +117,20 @@ static const int json_type_int64 = json_type_int;
          && (__element = json_object_array_get_idx(__array, __index)); \
          __index++)
 
+// Checks if the provided JSON string is one of the provided string arguments.
+// Prints an error and returns -1 if it does not match any.
+#define CONFIG_IS_IN_ENUM_STRING(__config, __field_name, ...)          \
+    do {                                                               \
+        unsigned    _i      = 0;                                       \
+        const char* _vals[] = {__VA_ARGS__, NULL};                     \
+        while (_vals[_i]                                               \
+               && strcmp(_vals[_i], json_object_get_string(__config))) \
+            _i++;                                                      \
+        if (!_vals[_i]) {                                              \
+            fprintf(stderr, "Invalid enum value for %s (\"%s\")",      \
+                    __field_name, json_object_get_string(__config));   \
+            return (-1);                                               \
+        }                                                              \
+    } while (0)
+
 #endif /* __ABT_IO_MACROS */
