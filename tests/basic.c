@@ -69,8 +69,10 @@ int main(int argc, char** argv)
     /* start up abt-io */
     if (args.json_config == NULL)
         aid = abt_io_init(2);
-    else
+    else {
         aid = abt_io_init_ext(&args);
+        free((char*)args.json_config);
+    }
 
     assert(aid != NULL);
 
