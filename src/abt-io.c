@@ -108,6 +108,10 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
     }
 
     /* validate and complete configuration */
+    /* TODO: if liburing is enabled; validate that pool only has one ES (if
+     * possible); it won't be helpful to have more than one dedicated to
+     * abt-io in that case.
+     */
     ret = validate_and_complete_config(config, args.progress_pool);
     if (ret != 0) {
         fprintf(stderr, "Could not validate and complete configuration");
@@ -1843,6 +1847,17 @@ static int validate_and_complete_config(struct json_object* _config,
      *       "num_xstreams": 4
      *    }
      * }
+     *
+     * control over io engine type
+     * --------------
+     * Then engine field can be set to control what I/O engine will be used
+     * to execute operations.  The current options are:
+     * - "posix" - the default option; uses conventional open, close, pwrite,
+     *    etc. functions executed within a dedicated Argobots pool
+     * - "liburing" - uses the Linux specifc liburing library
+     *
+     * example:
+     * {"engine"="posix"}
      */
 
     /* report version number for this component */
@@ -1922,6 +1937,14 @@ static int validate_and_complete_config(struct json_object* _config,
                                "internal_pool.kind", 1);
         CONFIG_OVERRIDE_STRING(_internal_pool, "access", "mpmc",
                                "internal_pool.kind", 1);
+    }
+
+    /* I/O engine type */
+    if (!CONFIG_HAS(_config, "engine", val)) {
+        CONFIG_OVERRIDE_STRING(_config, "engine", "posix", "engine", 0);
+    } else {
+        struct json_object* jengine = json_object_object_get(_config, "engine");
+        CONFIG_IS_IN_ENUM_STRING(jengine, "engine", "posix", "liburing");
     }
 
     return (0);
