@@ -107,6 +107,9 @@ AC_DEFINE([HAVE_MKOSTEMP], [], [Define if mkostemp available])
 NONCOMPLIANT_IO=1
 AC_MSG_RESULT(no))
 
+# zlib is used for benchmark output file
+CHECK_ZLIB
+
 AC_CONFIG_FILES([Makefile maint/abt-io.pc])
 AC_OUTPUT
  
