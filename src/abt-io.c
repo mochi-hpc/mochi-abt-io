@@ -96,6 +96,7 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
     struct json_object*     config = NULL;
     struct abt_io_instance* aid    = NULL;
     int                     ret;
+    struct json_object*     jengine = json_object_object_get(config, "engine");
 
     if (uargs) args = *uargs;
 
@@ -133,25 +134,6 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
     aid = malloc(sizeof(*aid));
     if (aid == NULL) goto error;
 
-    struct json_object* jengine = json_object_object_get(config, "engine");
-    if (strcmp(json_object_get_string(jengine), "posix") == 0)
-        aid->engine_type = ABT_IO_ENGINE_POSIX;
-    else if (strcmp(json_object_get_string(jengine), "liburing") == 0) {
-#ifndef USE_LIBURING
-        fprintf(stderr,
-                "Error: requested \"engine\"=\"liburing\" but abt-io was not "
-                "compiled with liburing support.\n");
-        goto error;
-#else
-        aid->engine_type = ABT_IO_ENGINE_LIBURING;
-        ret = io_uring_queue_init(DEFAULT_URING_ENTRIES, &aid->ring, 0);
-        if (ret != 0) {
-            fprintf(stderr, "Error: io_uring_queue_init() failure.\n");
-            goto error;
-        }
-#endif
-    }
-
     aid->do_null_io_write
         = json_object_get_int(json_object_object_get(config, "null_io_write"));
     aid->do_null_io_read
@@ -171,6 +153,24 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
 
     ret = setup_pool(aid, config, args.progress_pool);
     if (ret != 0) goto error;
+
+    if (strcmp(json_object_get_string(jengine), "posix") == 0)
+        aid->engine_type = ABT_IO_ENGINE_POSIX;
+    else if (strcmp(json_object_get_string(jengine), "liburing") == 0) {
+#ifndef USE_LIBURING
+        fprintf(stderr,
+                "Error: requested \"engine\"=\"liburing\" but abt-io was not "
+                "compiled with liburing support.\n");
+        goto error;
+#else
+        aid->engine_type = ABT_IO_ENGINE_LIBURING;
+        ret = io_uring_queue_init(DEFAULT_URING_ENTRIES, &aid->ring, 0);
+        if (ret != 0) {
+            fprintf(stderr, "Error: io_uring_queue_init() failure.\n");
+            goto error;
+        }
+#endif
+    }
 
     aid->json_cfg = config;
     return aid;
