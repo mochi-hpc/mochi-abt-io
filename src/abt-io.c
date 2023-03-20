@@ -136,7 +136,7 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
         goto error;
     }
 
-    aid = malloc(sizeof(*aid));
+    aid = calloc(1, sizeof(*aid));
     if (aid == NULL) goto error;
 
     aid->do_null_io_write
@@ -209,19 +209,18 @@ abt_io_instance_id abt_io_init_pool(ABT_pool progress_pool)
 
 void abt_io_finalize(abt_io_instance_id aid)
 {
-    teardown_pool(aid);
-    json_object_put(aid->json_cfg);
 #ifdef USE_LIBURING
     if (aid->engine_type == ABT_IO_ENGINE_LIBURING) {
-        /* get completion queue fn to stop */
+        /* stop the persistent completion queue fn */
         aid->uring_shutdown_flag = 1;
         ABT_task_join(aid->uring_completion_task);
 
         /* tear down uring queues */
-        if (aid->engine_type == ABT_IO_ENGINE_LIBURING)
-            io_uring_queue_exit(&aid->ring);
+        io_uring_queue_exit(&aid->ring);
     }
 #endif
+    teardown_pool(aid);
+    json_object_put(aid->json_cfg);
     free(aid);
 }
 
@@ -245,17 +244,28 @@ struct abt_io_open_state {
     abt_io_instance_id aid;
 };
 
+#ifdef USE_LIBURING
 static void uring_completion_task_fn(void* foo)
 {
     struct abt_io_instance* aid = foo;
+    int                     ret;
+    struct io_uring_cqe*    cqe;
 
     while (!aid->uring_shutdown_flag) {
-        /* TODO: actual completion queue timed wait logic */
-        sleep(1);
+        /* NOTE: we intentionally do not user a timeout here.  If we need
+         * to break out of this call then we will issue a timeout op from
+         * another caller.
+         */
+        ret = io_uring_wait_cqe(&aid->ring, &cqe);
+        if (ret == 0) {
+            fprintf(stderr, "DBG: got cqe.\n");
+            io_uring_cqe_seen(&aid->ring, cqe);
+        }
     }
 
     return;
 }
+#endif
 
 static void abt_io_open_fn(void* foo)
 {
