@@ -212,7 +212,17 @@ void abt_io_finalize(abt_io_instance_id aid)
 #ifdef USE_LIBURING
     if (aid->engine_type == ABT_IO_ENGINE_LIBURING) {
         /* stop the persistent completion queue fn */
-        aid->uring_shutdown_flag = 1;
+        /* We set a shutdown flag so that the engine loop will see that we
+         * are in shutdown mode.  Then submit a timeout operation to fire
+         * immediately to break out of the cqe wait function.
+         */
+        struct __kernel_timespec ts  = {0};
+        struct io_uring_sqe*     sqe = io_uring_get_sqe(&aid->ring);
+        aid->uring_shutdown_flag     = 1;
+        io_uring_prep_timeout(sqe, &ts, 0, 0);
+        /* NULL user data to indicate progress loop should ignore content */
+        io_uring_sqe_set_data(sqe, NULL);
+        io_uring_submit(&aid->ring);
         ABT_task_join(aid->uring_completion_task);
 
         /* tear down uring queues */
@@ -258,7 +268,11 @@ static void uring_completion_task_fn(void* foo)
          */
         ret = io_uring_wait_cqe(&aid->ring, &cqe);
         if (ret == 0) {
-            fprintf(stderr, "DBG: got cqe.\n");
+            if (!cqe->user_data) {
+                fprintf(stderr, "DBG: got cqe timeout break.\n");
+            } else {
+                fprintf(stderr, "DBG: got cqe (unknown).\n");
+            }
             io_uring_cqe_seen(&aid->ring, cqe);
         }
     }
