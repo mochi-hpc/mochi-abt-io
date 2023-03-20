@@ -46,7 +46,9 @@ struct abt_io_instance {
     double epoch_start; /* i/o logs will report time relative to this */
     enum abt_io_engine_type engine_type;
 #ifdef USE_LIBURING
+    ABT_task        uring_completion_task;
     struct io_uring ring;
+    int             uring_shutdown_flag;
 #endif
 };
 
@@ -55,6 +57,8 @@ struct abt_io_op {
     void*        state;
     void (*free_fn)(void*);
 };
+
+static void uring_completion_task_fn(void* foo);
 
 /**
  * Validates the format of the configuration and fills default values
@@ -96,7 +100,7 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
     struct json_object*     config = NULL;
     struct abt_io_instance* aid    = NULL;
     int                     ret;
-    struct json_object*     jengine = json_object_object_get(config, "engine");
+    struct json_object*     jengine = NULL;
 
     if (uargs) args = *uargs;
 
@@ -154,6 +158,7 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
     ret = setup_pool(aid, config, args.progress_pool);
     if (ret != 0) goto error;
 
+    jengine = json_object_object_get(config, "engine");
     if (strcmp(json_object_get_string(jengine), "posix") == 0)
         aid->engine_type = ABT_IO_ENGINE_POSIX;
     else if (strcmp(json_object_get_string(jengine), "liburing") == 0) {
@@ -164,9 +169,19 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
         goto error;
 #else
         aid->engine_type = ABT_IO_ENGINE_LIBURING;
+        /* initialize uring queue */
         ret = io_uring_queue_init(DEFAULT_URING_ENTRIES, &aid->ring, 0);
         if (ret != 0) {
             fprintf(stderr, "Error: io_uring_queue_init() failure.\n");
+            goto error;
+        }
+        /* create a task that will wait for completion events */
+        ret = ABT_task_create(aid->progress_pool, uring_completion_task_fn, aid,
+                              &aid->uring_completion_task);
+        if (ret != ABT_SUCCESS) {
+            fprintf(
+                stderr,
+                "Error: unable to create uring_completion_task_fn() task.\n");
             goto error;
         }
 #endif
@@ -196,8 +211,15 @@ void abt_io_finalize(abt_io_instance_id aid)
     teardown_pool(aid);
     json_object_put(aid->json_cfg);
 #ifdef USE_LIBURING
-    if (aid->engine_type == ABT_IO_ENGINE_LIBURING)
-        io_uring_queue_exit(&aid->ring);
+    if (aid->engine_type == ABT_IO_ENGINE_LIBURING) {
+        /* get completion queue fn to stop */
+        aid->uring_shutdown_flag = 1;
+        ABT_task_join(aid->uring_completion_task);
+
+        /* tear down uring queues */
+        if (aid->engine_type == ABT_IO_ENGINE_LIBURING)
+            io_uring_queue_exit(&aid->ring);
+    }
 #endif
     free(aid);
 }
@@ -221,6 +243,18 @@ struct abt_io_open_state {
     ABT_eventual       eventual;
     abt_io_instance_id aid;
 };
+
+static void uring_completion_task_fn(void* foo)
+{
+    struct abt_io_instance* aid = foo;
+
+    while (!aid->uring_shutdown_flag) {
+        /* TODO: actual completion queue timed wait logic */
+        sleep(1);
+    }
+
+    return;
+}
 
 static void abt_io_open_fn(void* foo)
 {
