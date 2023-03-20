@@ -68,6 +68,24 @@ static void uring_completion_task_fn(void* foo);
 static int validate_and_complete_config(struct json_object* _config,
                                         ABT_pool            _progress_pool);
 
+static int issue_pwrite_posix(abt_io_instance_id aid,
+                              abt_io_op_t*       op,
+                              int                fd,
+                              const void*        buf,
+                              size_t             count,
+                              off_t              offset,
+                              ssize_t*           ret);
+static int issue_pwrite_liburing(abt_io_instance_id aid,
+                                 abt_io_op_t*       op,
+                                 int                fd,
+                                 const void*        buf,
+                                 size_t             count,
+                                 off_t              offset,
+                                 ssize_t*           ret);
+static int (*issue_pwrite)(
+    abt_io_instance_id, abt_io_op_t*, int, const void*, size_t, off_t, ssize_t*)
+    = issue_pwrite_posix;
+
 /**
  * Set up pool (creating if needed) for abt-io instance to use
  */
@@ -129,6 +147,8 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
     /* TODO: if liburing is enabled; validate that pool only has one ES (if
      * possible); it won't be helpful to have more than one dedicated to
      * abt-io in that case.
+     * NOTE: maybe 2 ESs? We may want one to run posix operations that
+     * aren't directly supported by liburing.
      */
     ret = validate_and_complete_config(config, args.progress_pool);
     if (ret != 0) {
@@ -185,6 +205,9 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
                 "Error: unable to create uring_completion_task_fn() task.\n");
             goto error;
         }
+
+        /* set function pointers for operations supported by liburing */
+        issue_pwrite = issue_pwrite_liburing;
 #endif
     }
 
@@ -260,6 +283,7 @@ static void uring_completion_task_fn(void* foo)
     struct abt_io_instance* aid = foo;
     int                     ret;
     struct io_uring_cqe*    cqe;
+    struct abt_io_op*       op;
 
     while (!aid->uring_shutdown_flag) {
         /* NOTE: we intentionally do not user a timeout here.  If we need
@@ -272,6 +296,11 @@ static void uring_completion_task_fn(void* foo)
                 fprintf(stderr, "DBG: got cqe timeout break.\n");
             } else {
                 fprintf(stderr, "DBG: got cqe (unknown).\n");
+                op = (struct abt_io_op*)cqe->user_data;
+                /* TODO: check for any type problems on supported ops */
+                int64_t* result = op->state;
+                *result         = cqe->res;
+                ABT_eventual_set(op->e, NULL, 0);
             }
             io_uring_cqe_seen(&aid->ring, cqe);
         }
@@ -655,13 +684,60 @@ static void abt_io_pwrite_fn(void* foo)
     return;
 }
 
-static int issue_pwrite(abt_io_instance_id aid,
-                        abt_io_op_t*       op,
-                        int                fd,
-                        const void*        buf,
-                        size_t             count,
-                        off_t              offset,
-                        ssize_t*           ret)
+static int issue_pwrite_liburing(abt_io_instance_id aid,
+                                 abt_io_op_t*       arg_op,
+                                 int                fd,
+                                 const void*        buf,
+                                 size_t             count,
+                                 off_t              offset,
+                                 ssize_t*           ret)
+{
+    int                  rc;
+    struct io_uring_sqe* sqe      = io_uring_get_sqe(&aid->ring);
+    struct abt_io_op     stack_op = {0};
+    struct abt_io_op*    op;
+
+    if (arg_op == NULL)
+        op = &stack_op;
+    else
+        op = arg_op;
+
+    rc = ABT_eventual_create(0, &op->e);
+    if (rc != ABT_SUCCESS) {
+        *ret = -ENOMEM;
+        goto err;
+    }
+    op->state = ret;
+
+    io_uring_prep_write(sqe, fd, buf, count, offset);
+    io_uring_sqe_set_data(sqe, op);
+    io_uring_submit(&aid->ring);
+
+    if (arg_op == NULL) {
+        rc = ABT_eventual_wait(op->e, NULL);
+        // what error should we use here?
+        if (rc != ABT_SUCCESS) {
+            *ret = -EINVAL;
+            goto err;
+        }
+    } else {
+        op->free_fn = free;
+    }
+
+    if (arg_op == NULL) ABT_eventual_free(&op->e);
+    return 0;
+err:
+    if (op->e != NULL) ABT_eventual_free(&op->e);
+    return -1;
+}
+
+static int issue_pwrite_posix(abt_io_instance_id aid,
+                              abt_io_op_t*       op,
+                              int                fd,
+                              const void*        buf,
+                              size_t             count,
+                              off_t              offset,
+                              ssize_t*           ret)
 {
     struct abt_io_pwrite_state  state;
     struct abt_io_pwrite_state* pstate = NULL;
