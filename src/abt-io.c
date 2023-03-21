@@ -190,8 +190,8 @@ static void abt_io_open_fn(void* foo)
     *state->ret = open(state->pathname, state->flags, state->mode);
     if (*state->ret < 0) *state->ret = -errno;
 
-    ABT_eventual_set(state->eventual, NULL, 0);
     abt_io_log(state->aid, "open", 0, 0, start, ABT_get_wtime());
+    ABT_eventual_set(state->eventual, NULL, 0);
     return;
 }
 
@@ -310,9 +310,9 @@ static void abt_io_pread_fn(void* foo)
         if (*state->ret < 0) *state->ret = -errno;
     }
 
-    ABT_eventual_set(state->eventual, NULL, 0);
     abt_io_log(state->aid, "pread", state->offset, state->count, start,
                ABT_get_wtime());
+    ABT_eventual_set(state->eventual, NULL, 0);
     return;
 }
 
@@ -434,9 +434,9 @@ static void abt_io_read_fn(void* foo)
 
     if (*state->ret < 0) *state->ret = -errno;
 
-    ABT_eventual_set(state->eventual, NULL, 0);
     end = ABT_get_wtime();
     abt_io_log(state->aid, "read", -1, state->count, start, end);
+    ABT_eventual_set(state->eventual, NULL, 0);
     return;
 }
 
@@ -550,9 +550,9 @@ static void abt_io_pwrite_fn(void* foo)
         if (*state->ret < 0) *state->ret = -errno;
     }
 
-    ABT_eventual_set(state->eventual, NULL, 0);
     abt_io_log(state->aid, "pwrite", state->offset, state->count, start,
                ABT_get_wtime());
+    ABT_eventual_set(state->eventual, NULL, 0);
     return;
 }
 
@@ -671,8 +671,8 @@ static void abt_io_write_fn(void* foo)
         if (*state->ret < 0) *state->ret = -errno;
     }
 
-    ABT_eventual_set(state->eventual, NULL, 0);
     abt_io_log(state->aid, "write", -1, state->count, start, ABT_get_wtime());
+    ABT_eventual_set(state->eventual, NULL, 0);
     return;
 }
 
@@ -784,8 +784,8 @@ static void abt_io_mkostemp_fn(void* foo)
 #endif
     if (*state->ret < 0) *state->ret = -errno;
 
-    ABT_eventual_set(state->eventual, NULL, 0);
     abt_io_log(state->aid, "mkostemp", 0, 0, start, ABT_get_wtime());
+    ABT_eventual_set(state->eventual, NULL, 0);
     return;
 }
 
@@ -886,8 +886,8 @@ static void abt_io_unlink_fn(void* foo)
     *state->ret = unlink(state->pathname);
     if (*state->ret < 0) *state->ret = -errno;
 
-    ABT_eventual_set(state->eventual, NULL, 0);
     abt_io_log(state->aid, "unlink", 0, 0, start, ABT_get_wtime());
+    ABT_eventual_set(state->eventual, NULL, 0);
     return;
 }
 
@@ -988,8 +988,8 @@ static void abt_io_close_fn(void* foo)
     *state->ret = close(state->fd);
     if (*state->ret < 0) *state->ret = -errno;
 
-    ABT_eventual_set(state->eventual, NULL, 0);
     abt_io_log(state->aid, "close", 0, 0, start, ABT_get_wtime());
+    ABT_eventual_set(state->eventual, NULL, 0);
     return;
 }
 
@@ -1088,8 +1088,8 @@ static void abt_io_fdatasync_fn(void* foo)
     *state->ret = fdatasync(state->fd);
     if (*state->ret < 0) *state->ret = -errno;
 
-    ABT_eventual_set(state->eventual, NULL, 0);
     abt_io_log(state->aid, "sync", 0, 0, start, ABT_get_wtime());
+    ABT_eventual_set(state->eventual, NULL, 0);
     return;
 }
 
@@ -1195,9 +1195,9 @@ static void abt_io_fallocate_fn(void* foo)
     *state->ret = -ENOSYS;
 #endif
 
-    ABT_eventual_set(state->eventual, NULL, 0);
     abt_io_log(state->aid, "fallocate", state->offset, state->len, start,
                ABT_get_wtime());
+    ABT_eventual_set(state->eventual, NULL, 0);
     return;
 }
 
@@ -1306,8 +1306,8 @@ static void abt_io_statfs_fn(void* foo)
     *state->ret = statfs(state->pathname, state->statfsbuf);
     if (*state->ret < 0) *state->ret = -errno;
 
-    ABT_eventual_set(state->eventual, NULL, 0);
     abt_io_log(state->aid, "statfs", 0, 0, start, ABT_get_wtime());
+    ABT_eventual_set(state->eventual, NULL, 0);
     return;
 }
 
@@ -1395,8 +1395,8 @@ static void abt_io_stat_fn(void* foo)
     *state->ret = stat(state->pathname, state->statbuf);
     if (*state->ret < 0) *state->ret = -errno;
 
-    ABT_eventual_set(state->eventual, NULL, 0);
     abt_io_log(state->aid, "stat", 0, 0, start, ABT_get_wtime());
+    ABT_eventual_set(state->eventual, NULL, 0);
     return;
 }
 
@@ -1482,9 +1482,9 @@ static void abt_io_truncate_fn(void* foo)
     *state->ret = truncate(state->pathname, state->length);
     if (*state->ret < 0) *state->ret = -errno;
 
-    ABT_eventual_set(state->eventual, NULL, 0);
     abt_io_log(state->aid, "truncate", 0, state->length, start,
                ABT_get_wtime());
+    ABT_eventual_set(state->eventual, NULL, 0);
     return;
 }
 
