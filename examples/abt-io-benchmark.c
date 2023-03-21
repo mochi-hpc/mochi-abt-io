@@ -482,7 +482,7 @@ static void abt_bench(abt_io_instance_id aid,
             snprintf(filename, 128, "%s.%d", data_file_name, i);
         else
             snprintf(filename, 128, "%s", data_file_name);
-        if (i == 0 || !unique_files_flag) {
+        if (unique_files_flag || i==0) {
             args[i].fd = open(filename, open_flags, S_IWUSR | S_IRUSR);
             if (args[i].fd < 0) {
                 perror("open");
@@ -539,7 +539,7 @@ static void abt_bench(abt_io_instance_id aid,
             snprintf(filename, 128, "%s.%d", data_file_name, i);
         else
             snprintf(filename, 128, "%s", data_file_name);
-        if (i == 0 || !unique_files_flag) {
+        if (unique_files_flag || i==0) {
             close(args[i].fd);
             unlink(filename);
         }
