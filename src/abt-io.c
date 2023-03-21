@@ -292,12 +292,14 @@ static void uring_completion_task_fn(void* foo)
          */
         ret = io_uring_wait_cqe(&aid->ring, &cqe);
         if (ret == 0) {
-            if (!cqe->user_data) {
-                fprintf(stderr, "DBG: got cqe timeout break.\n");
-            } else {
-                fprintf(stderr, "DBG: got cqe (unknown).\n");
+            /* NOTE: if user_data isn't set, then we assume that it was just
+             * an event (e.g., a timeout) injected to break out of the wait
+             * call.
+             */
+            if (cqe->user_data) {
                 op = (struct abt_io_op*)cqe->user_data;
-                /* TODO: check for any type problems on supported ops */
+                /* TODO: will this casting work for the return type on all
+                 * supported operations? */
                 int64_t* result = op->state;
                 *result         = cqe->res;
                 ABT_eventual_set(op->e, NULL, 0);
