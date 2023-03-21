@@ -92,3 +92,23 @@ X_ABTIO -1      stat    -1      0       0       0.026542        0.026568
 X_ABTIO -1      statfs  -1      0       0       0.026603        0.026608
 X_ABTIO -1      unlink  -1      0       0       0.026662        0.026737
 ```
+
+## Benchmarking
+
+See abt-io-benchmark in the examples subdirectory.  The command line should
+specify a json configuration and an output file in which to place benchmark
+results.  For example:
+
+```
+examples/abt-io-benchmark -j ../tests/abt-io-benchmark-example.json -o output
+```
+
+You can inspect the results with `zcat output.gz`.  This example json file
+intentionally clears the open flags (it would normally use `O_DIRECT` and
+`O_SYNC`), reduces the default concurrency and benchmark duration, and
+disables tracing in order to run promptly.  The fully resolved configuration
+can be found at the top of the output file.
+
+The benchmark reports the aggregate throughput as well as some statistical
+measures of the per-operation response time.  If "trace" is set to true then
+it will also report the response time of each individual operation.  
