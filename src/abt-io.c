@@ -708,6 +708,7 @@ static int issue_pwrite_liburing(abt_io_instance_id aid,
     }
     op->state = ret;
 
+    /* TODO: abt_io_log() support for uring operations */
     io_uring_prep_write(sqe, fd, buf, count, offset);
     io_uring_sqe_set_data(sqe, op);
     io_uring_submit(&aid->ring);
