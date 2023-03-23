@@ -56,6 +56,7 @@ struct abt_io_op {
     ABT_eventual e;
     void*        state;
     void (*free_fn)(void*);
+    struct iovec vec;
 };
 
 static void uring_completion_task_fn(void* foo);
@@ -711,7 +712,17 @@ static int issue_pwrite_liburing(abt_io_instance_id aid,
     op->state = ret;
 
     /* TODO: abt_io_log() support for uring operations */
-    io_uring_prep_write(sqe, fd, buf, count, offset);
+
+    /* NOTE: some older kernels (at least 5.3.x do not support the WRITE
+     * operation, but they do support WRITEV, so we use that here.  It's
+     * also possible that older kernels require the iovec state to be stable
+     * until completion according the NOTES section of the
+     * io_uring_prep_writev() man page.  For maximum safety we therefore use
+     * a field in the abt_io_op structure for this purpose.
+     */
+    op->vec.iov_base = (void*)buf;
+    op->vec.iov_len  = count;
+    io_uring_prep_writev(sqe, fd, &op->vec, 1, offset);
     io_uring_sqe_set_data(sqe, op);
     io_uring_submit(&aid->ring);
 
