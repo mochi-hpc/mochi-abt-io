@@ -50,6 +50,7 @@ int main(int argc, char** argv)
     abt_io_instance_id aid;
     struct abt_io_init_info args = { 0 };
     int                fd;
+    int                fd2;
     char template[64];
 
     ABT_init(argc, argv);
@@ -81,6 +82,10 @@ int main(int argc, char** argv)
 
     ret = abt_io_pwrite(aid, fd, &fd, sizeof(fd), 0);
     assert(ret == sizeof(fd));
+
+    ret = abt_io_pread(aid, fd, &fd2, sizeof(fd2), 0);
+    assert(ret == sizeof(fd2));
+    assert(fd == fd2);
 
 #ifdef HAVE_FALLOCATE
     ret = abt_io_fallocate(aid, fd, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
