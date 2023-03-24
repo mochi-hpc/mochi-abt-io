@@ -32,6 +32,10 @@
  */
 #define MAX_SAMPLES_PER_THREAD (8 * 1024 * 1024)
 
+/* benchmark types to perform */
+#define BENCHMARK_OP_WRITE 1
+#define BENCHMARK_OP_READ  2
+
 struct options {
     char json_file[256];
     char output_file[256];
@@ -65,7 +69,8 @@ struct write_abt_arg {
 
 static void write_abt_bench(void* _arg);
 
-static void abt_bench(abt_io_instance_id aid,
+static void abt_bench(int                benchmark_op,
+                      abt_io_instance_id aid,
                       unsigned int       concurrency,
                       size_t             access_size_bytes,
                       double             duration_seconds,
@@ -98,6 +103,8 @@ int main(int argc, char** argv)
     gzFile                   f            = NULL;
     int                      i, j;
     int                      trace_flag        = 0;
+    int                      benchmark_op      = BENCHMARK_OP_WRITE;
+    const char*              benchmark_op_str  = NULL;
     int                      open_flags        = O_WRONLY | O_CREAT;
     int                      unique_files_flag = 0;
     int                      fallocate_flag    = 0;
@@ -157,6 +164,14 @@ int main(int argc, char** argv)
         json_object_object_get(json_cfg, "data_file_name"));
     trace_flag
         = json_object_get_boolean(json_object_object_get(json_cfg, "trace"));
+    benchmark_op_str = json_object_get_string(
+        json_object_object_get(json_cfg, "benchmark_op"));
+    if (!strcmp(benchmark_op_str, "write"))
+        benchmark_op = BENCHMARK_OP_WRITE;
+    else {
+        fprintf(stderr, "Error: unknown benchmark_op specified: \"%s\"\n", benchmark_op_str);
+        goto err_cleanup;
+    }
     unique_files_flag = json_object_get_boolean(
         json_object_object_get(json_cfg, "unique_files"));
     fallocate_flag = json_object_get_boolean(
@@ -194,9 +209,9 @@ int main(int argc, char** argv)
         goto err_cleanup;
     }
 
-    abt_bench(aid, concurrency, access_size_bytes, duration_seconds,
-              data_file_name, open_flags, unique_files_flag, fallocate_flag, &ops_done,
-              &elapsed_seconds, samples);
+    abt_bench(benchmark_op, aid, concurrency, access_size_bytes,
+              duration_seconds, data_file_name, open_flags, unique_files_flag,
+              fallocate_flag, &ops_done, &elapsed_seconds, samples);
 
     /* store results */
     f = gzopen(opts.output_file, "w");
@@ -362,6 +377,7 @@ static int parse_json(const char* json_file, struct json_object** json_cfg)
     CONFIG_HAS_OR_CREATE(*json_cfg, int, "concurrency", 16, val);
     CONFIG_HAS_OR_CREATE(*json_cfg, int, "access_size_bytes", 4096, val);
     CONFIG_HAS_OR_CREATE(*json_cfg, boolean, "trace", 1, val);
+    CONFIG_HAS_OR_CREATE(*json_cfg, string, "benchmark_op", "write", val);
     CONFIG_HAS_OR_CREATE(*json_cfg, boolean, "unique_files", 1, val);
     CONFIG_HAS_OR_CREATE(*json_cfg, boolean, "fallocate", 1, val);
     array = json_object_object_get(*json_cfg, "open_flags");
@@ -442,7 +458,8 @@ static int sample_compare(const void* p1, const void* p2)
     return 0;
 }
 
-static void abt_bench(abt_io_instance_id aid,
+static void abt_bench(int                benchmark_op,
+                      abt_io_instance_id aid,
                       unsigned int       concurrency,
                       size_t             access_size_bytes,
                       double             duration_seconds,
@@ -466,6 +483,9 @@ static void abt_bench(abt_io_instance_id aid,
     double                start;
     char                  filename[256] = {0};
     ABT_barrier           barrier;
+    void (*bench_thr_fn)(void*) = NULL;
+
+    if (benchmark_op == BENCHMARK_OP_WRITE) bench_thr_fn = write_abt_bench;
 
     tid_array = malloc(concurrency * sizeof(*tid_array));
     assert(tid_array);
@@ -523,7 +543,7 @@ static void abt_bench(abt_io_instance_id aid,
 
     for (i = 0; i < concurrency; i++) {
         /* create ULTs */
-        ret = ABT_thread_create(pool, write_abt_bench, &args[i],
+        ret = ABT_thread_create(pool, bench_thr_fn, &args[i],
                                 ABT_THREAD_ATTR_NULL, &tid_array[i]);
         assert(ret == 0);
     }
