@@ -106,7 +106,7 @@ int main(int argc, char** argv)
     int                      trace_flag        = 0;
     int                      benchmark_op      = BENCHMARK_OP_WRITE;
     const char*              benchmark_op_str  = NULL;
-    int                      open_flags        = O_WRONLY | O_CREAT;
+    int                      open_flags        = 0;
     int                      unique_files_flag = 0;
     int                      fallocate_flag    = 0;
     struct sample_statistics stats             = {0};
@@ -169,10 +169,15 @@ int main(int argc, char** argv)
         json_object_object_get(json_cfg, "fallocate"));
     benchmark_op_str = json_object_get_string(
         json_object_object_get(json_cfg, "benchmark_op"));
-    if (!strcmp(benchmark_op_str, "write"))
+    if (!strcmp(benchmark_op_str, "write")) {
         benchmark_op = BENCHMARK_OP_WRITE;
-    else if (!strcmp(benchmark_op_str, "read")) {
+        open_flags   = O_WRONLY | O_CREAT;
+    } else if (!strcmp(benchmark_op_str, "read")) {
         benchmark_op = BENCHMARK_OP_READ;
+        /* note that we can't open read only; the benchmark will create its
+         * own file and fallocate it so it must be writeable
+         */
+        open_flags = O_RDWR | O_CREAT;
         if (!fallocate_flag) {
             fprintf(stderr,
                     "Error: \"benchmark_op\":\"read\" requires that "
@@ -624,8 +629,8 @@ static void abt_thread_fn(void* _arg)
                                 arg->access_size_bytes, my_offset);
             assert(ret == arg->access_size_bytes);
         } else if (arg->benchmark_op == BENCHMARK_OP_READ) {
-            ret = abt_io_pwrite(arg->aid, arg->fd, buffer,
-                                arg->access_size_bytes, my_offset);
+            ret = abt_io_pread(arg->aid, arg->fd, buffer,
+                               arg->access_size_bytes, my_offset);
             assert(ret == arg->access_size_bytes || ret == 0);
             if (ret == 0) {
                 /* We hit EOF. End benchmark here. */
