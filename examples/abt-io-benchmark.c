@@ -171,15 +171,17 @@ int main(int argc, char** argv)
         json_object_object_get(json_cfg, "benchmark_op"));
     if (!strcmp(benchmark_op_str, "write"))
         benchmark_op = BENCHMARK_OP_WRITE;
-    else if(!strcmp(benchmark_op_str, "read")) {
+    else if (!strcmp(benchmark_op_str, "read")) {
         benchmark_op = BENCHMARK_OP_READ;
-        if(!fallocate_flag) {
-            fprintf(stderr, "Error: \"benchmark_op\":\"read\" requires that \"fallocate\":true also be set.\n");
+        if (!fallocate_flag) {
+            fprintf(stderr,
+                    "Error: \"benchmark_op\":\"read\" requires that "
+                    "\"fallocate\":true also be set.\n");
             goto err_cleanup;
         }
-    }
-    else {
-        fprintf(stderr, "Error: unknown benchmark_op specified: \"%s\"\n", benchmark_op_str);
+    } else {
+        fprintf(stderr, "Error: unknown benchmark_op specified: \"%s\"\n",
+                benchmark_op_str);
         goto err_cleanup;
     }
     unique_files_flag = json_object_get_boolean(
@@ -481,18 +483,18 @@ static void abt_bench(int                benchmark_op,
                       double*            elapsed_seconds,
                       double*            samples)
 {
-    ABT_thread*           tid_array = NULL;
-    ABT_mutex             mutex;
+    ABT_thread*            tid_array = NULL;
+    ABT_mutex              mutex;
     struct abt_thread_arg* args;
-    off_t                 global_next_offset = 0;
-    int                   ret;
-    double                end;
-    unsigned int          i;
-    ABT_xstream           xstream;
-    ABT_pool              pool;
-    double                start;
-    char                  filename[256] = {0};
-    ABT_barrier           barrier;
+    off_t                  global_next_offset = 0;
+    int                    ret;
+    double                 end;
+    unsigned int           i;
+    ABT_xstream            xstream;
+    ABT_pool               pool;
+    double                 start;
+    char                   filename[256] = {0};
+    ABT_barrier            barrier;
 
     tid_array = malloc(concurrency * sizeof(*tid_array));
     assert(tid_array);
@@ -594,10 +596,10 @@ static void abt_bench(int                benchmark_op,
 static void abt_thread_fn(void* _arg)
 {
     struct abt_thread_arg* arg       = _arg;
-    off_t                 my_offset = 0;
-    size_t                ret;
-    void*                 buffer;
-    double                prev_ts, this_ts;
+    off_t                  my_offset = 0;
+    size_t                 ret;
+    void*                  buffer;
+    double                 prev_ts, this_ts;
 
     ret = posix_memalign(&buffer, 4096, arg->access_size_bytes);
     assert(ret == 0);
@@ -617,22 +619,20 @@ static void abt_thread_fn(void* _arg)
             (*arg->global_next_offset) += arg->access_size_bytes;
             ABT_mutex_unlock(*arg->mutex);
         }
-        if(arg->benchmark_op == BENCHMARK_OP_WRITE) {
-            ret = abt_io_pwrite(arg->aid, arg->fd, buffer, arg->access_size_bytes,
-                                my_offset);
+        if (arg->benchmark_op == BENCHMARK_OP_WRITE) {
+            ret = abt_io_pwrite(arg->aid, arg->fd, buffer,
+                                arg->access_size_bytes, my_offset);
             assert(ret == arg->access_size_bytes);
-        }
-        else if(arg->benchmark_op == BENCHMARK_OP_READ) {
-            ret = abt_io_pwrite(arg->aid, arg->fd, buffer, arg->access_size_bytes,
-                                my_offset);
+        } else if (arg->benchmark_op == BENCHMARK_OP_READ) {
+            ret = abt_io_pwrite(arg->aid, arg->fd, buffer,
+                                arg->access_size_bytes, my_offset);
             assert(ret == arg->access_size_bytes || ret == 0);
-            if(ret == 0) {
+            if (ret == 0) {
                 /* We hit EOF. End benchmark here. */
                 printf("# Warning: read benchmark hit EOF; stopping early.\n");
                 break;
             }
-        }
-        else {
+        } else {
             fprintf(stderr, "Error: invalid benchmark_op.\n");
             assert(0);
         }
