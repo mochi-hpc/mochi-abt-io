@@ -32,6 +32,10 @@
  */
 #define MAX_SAMPLES_PER_THREAD (8 * 1024 * 1024)
 
+/* benchmark types to perform */
+#define BENCHMARK_OP_WRITE 1
+#define BENCHMARK_OP_READ  2
+
 struct options {
     char json_file[256];
     char output_file[256];
@@ -47,7 +51,8 @@ struct sample_statistics {
 };
 
 /* abt data types and fn prototypes */
-struct write_abt_arg {
+struct abt_thread_arg {
+    int                benchmark_op;
     double             start_time;
     double             end_time;
     size_t             access_size_bytes;
@@ -63,9 +68,10 @@ struct write_abt_arg {
     double*            samples;
 };
 
-static void write_abt_bench(void* _arg);
+static void abt_thread_fn(void* _arg);
 
-static void abt_bench(abt_io_instance_id aid,
+static void abt_bench(int                benchmark_op,
+                      abt_io_instance_id aid,
                       unsigned int       concurrency,
                       size_t             access_size_bytes,
                       double             duration_seconds,
@@ -98,6 +104,8 @@ int main(int argc, char** argv)
     gzFile                   f            = NULL;
     int                      i, j;
     int                      trace_flag        = 0;
+    int                      benchmark_op      = BENCHMARK_OP_WRITE;
+    const char*              benchmark_op_str  = NULL;
     int                      open_flags        = O_WRONLY | O_CREAT;
     int                      unique_files_flag = 0;
     int                      fallocate_flag    = 0;
@@ -157,6 +165,23 @@ int main(int argc, char** argv)
         json_object_object_get(json_cfg, "data_file_name"));
     trace_flag
         = json_object_get_boolean(json_object_object_get(json_cfg, "trace"));
+    fallocate_flag = json_object_get_boolean(
+        json_object_object_get(json_cfg, "fallocate"));
+    benchmark_op_str = json_object_get_string(
+        json_object_object_get(json_cfg, "benchmark_op"));
+    if (!strcmp(benchmark_op_str, "write"))
+        benchmark_op = BENCHMARK_OP_WRITE;
+    else if(!strcmp(benchmark_op_str, "read")) {
+        benchmark_op = BENCHMARK_OP_READ;
+        if(!fallocate_flag) {
+            fprintf(stderr, "Error: \"benchmark_op\":\"read\" requires that \"fallocate\":true also be set.\n");
+            goto err_cleanup;
+        }
+    }
+    else {
+        fprintf(stderr, "Error: unknown benchmark_op specified: \"%s\"\n", benchmark_op_str);
+        goto err_cleanup;
+    }
     unique_files_flag = json_object_get_boolean(
         json_object_object_get(json_cfg, "unique_files"));
     fallocate_flag = json_object_get_boolean(
@@ -194,9 +219,9 @@ int main(int argc, char** argv)
         goto err_cleanup;
     }
 
-    abt_bench(aid, concurrency, access_size_bytes, duration_seconds,
-              data_file_name, open_flags, unique_files_flag, fallocate_flag, &ops_done,
-              &elapsed_seconds, samples);
+    abt_bench(benchmark_op, aid, concurrency, access_size_bytes,
+              duration_seconds, data_file_name, open_flags, unique_files_flag,
+              fallocate_flag, &ops_done, &elapsed_seconds, samples);
 
     /* store results */
     f = gzopen(opts.output_file, "w");
@@ -362,6 +387,7 @@ static int parse_json(const char* json_file, struct json_object** json_cfg)
     CONFIG_HAS_OR_CREATE(*json_cfg, int, "concurrency", 16, val);
     CONFIG_HAS_OR_CREATE(*json_cfg, int, "access_size_bytes", 4096, val);
     CONFIG_HAS_OR_CREATE(*json_cfg, boolean, "trace", 1, val);
+    CONFIG_HAS_OR_CREATE(*json_cfg, string, "benchmark_op", "write", val);
     CONFIG_HAS_OR_CREATE(*json_cfg, boolean, "unique_files", 1, val);
     CONFIG_HAS_OR_CREATE(*json_cfg, boolean, "fallocate", 1, val);
     array = json_object_object_get(*json_cfg, "open_flags");
@@ -442,7 +468,8 @@ static int sample_compare(const void* p1, const void* p2)
     return 0;
 }
 
-static void abt_bench(abt_io_instance_id aid,
+static void abt_bench(int                benchmark_op,
+                      abt_io_instance_id aid,
                       unsigned int       concurrency,
                       size_t             access_size_bytes,
                       double             duration_seconds,
@@ -456,7 +483,7 @@ static void abt_bench(abt_io_instance_id aid,
 {
     ABT_thread*           tid_array = NULL;
     ABT_mutex             mutex;
-    struct write_abt_arg* args;
+    struct abt_thread_arg* args;
     off_t                 global_next_offset = 0;
     int                   ret;
     double                end;
@@ -510,6 +537,7 @@ static void abt_bench(abt_io_instance_id aid,
     }
 
     for (i = 0; i < concurrency; i++) {
+        args[i].benchmark_op       = benchmark_op;
         args[i].mutex              = &mutex;
         args[i].barrier            = &barrier;
         args[i].access_size_bytes  = access_size_bytes;
@@ -523,7 +551,7 @@ static void abt_bench(abt_io_instance_id aid,
 
     for (i = 0; i < concurrency; i++) {
         /* create ULTs */
-        ret = ABT_thread_create(pool, write_abt_bench, &args[i],
+        ret = ABT_thread_create(pool, abt_thread_fn, &args[i],
                                 ABT_THREAD_ATTR_NULL, &tid_array[i]);
         assert(ret == 0);
     }
@@ -563,9 +591,9 @@ static void abt_bench(abt_io_instance_id aid,
     return;
 }
 
-static void write_abt_bench(void* _arg)
+static void abt_thread_fn(void* _arg)
 {
-    struct write_abt_arg* arg       = _arg;
+    struct abt_thread_arg* arg       = _arg;
     off_t                 my_offset = 0;
     size_t                ret;
     void*                 buffer;
@@ -589,10 +617,26 @@ static void write_abt_bench(void* _arg)
             (*arg->global_next_offset) += arg->access_size_bytes;
             ABT_mutex_unlock(*arg->mutex);
         }
-        ret = abt_io_pwrite(arg->aid, arg->fd, buffer, arg->access_size_bytes,
-                            my_offset);
+        if(arg->benchmark_op == BENCHMARK_OP_WRITE) {
+            ret = abt_io_pwrite(arg->aid, arg->fd, buffer, arg->access_size_bytes,
+                                my_offset);
+            assert(ret == arg->access_size_bytes);
+        }
+        else if(arg->benchmark_op == BENCHMARK_OP_READ) {
+            ret = abt_io_pwrite(arg->aid, arg->fd, buffer, arg->access_size_bytes,
+                                my_offset);
+            assert(ret == arg->access_size_bytes || ret == 0);
+            if(ret == 0) {
+                /* We hit EOF. End benchmark here. */
+                printf("# Warning: read benchmark hit EOF; stopping early.\n");
+                break;
+            }
+        }
+        else {
+            fprintf(stderr, "Error: invalid benchmark_op.\n");
+            assert(0);
+        }
         this_ts = ABT_get_wtime() - arg->start_time;
-        assert(ret == arg->access_size_bytes);
         if (arg->ops_done < MAX_SAMPLES_PER_THREAD)
             arg->samples[arg->ops_done] = this_ts - prev_ts;
         prev_ts = this_ts;
