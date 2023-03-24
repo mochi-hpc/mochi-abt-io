@@ -86,6 +86,24 @@ static int (*issue_pwrite)(
     abt_io_instance_id, abt_io_op_t*, int, const void*, size_t, off_t, ssize_t*)
     = issue_pwrite_posix;
 
+static int issue_pread_posix(abt_io_instance_id aid,
+                             abt_io_op_t*       op,
+                             int                fd,
+                             void*              buf,
+                             size_t             count,
+                             off_t              offset,
+                             ssize_t*           ret);
+static int issue_pread_liburing(abt_io_instance_id aid,
+                                abt_io_op_t*       op,
+                                int                fd,
+                                void*              buf,
+                                size_t             count,
+                                off_t              offset,
+                                ssize_t*           ret);
+static int (*issue_pread)(
+    abt_io_instance_id, abt_io_op_t*, int, void*, size_t, off_t, ssize_t*)
+    = issue_pread_posix;
+
 /**
  * Set up pool (creating if needed) for abt-io instance to use
  */
@@ -208,6 +226,7 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
 
         /* set function pointers for operations supported by liburing */
         issue_pwrite = issue_pwrite_liburing;
+        issue_pread  = issue_pread_liburing;
 #endif
     }
 
@@ -446,13 +465,13 @@ static void abt_io_pread_fn(void* foo)
     return;
 }
 
-static int issue_pread(abt_io_instance_id aid,
-                       abt_io_op_t*       op,
-                       int                fd,
-                       void*              buf,
-                       size_t             count,
-                       off_t              offset,
-                       ssize_t*           ret)
+static int issue_pread_posix(abt_io_instance_id aid,
+                             abt_io_op_t*       op,
+                             int                fd,
+                             void*              buf,
+                             size_t             count,
+                             off_t              offset,
+                             ssize_t*           ret)
 {
     struct abt_io_pread_state  state;
     struct abt_io_pread_state* pstate = NULL;
@@ -2004,4 +2023,62 @@ static void teardown_pool(abt_io_instance_id aid)
     }
 
     return;
+}
+
+static int issue_pread_liburing(abt_io_instance_id aid,
+                                abt_io_op_t*       arg_op,
+                                int                fd,
+                                void*              buf,
+                                size_t             count,
+                                off_t              offset,
+                                ssize_t*           ret)
+{
+    int                  rc;
+    struct io_uring_sqe* sqe      = io_uring_get_sqe(&aid->ring);
+    struct abt_io_op     stack_op = {0};
+    struct abt_io_op*    op;
+
+    if (arg_op == NULL)
+        op = &stack_op;
+    else
+        op = arg_op;
+
+    rc = ABT_eventual_create(0, &op->e);
+    if (rc != ABT_SUCCESS) {
+        *ret = -ENOMEM;
+        goto err;
+    }
+    op->state = ret;
+
+    /* TODO: abt_io_log() support for uring operations */
+
+    /* NOTE: some older kernels (at least 5.3.x do not support the WRITE
+     * operation, but they do support WRITEV, so we use that here.  It's
+     * also possible that older kernels require the iovec state to be stable
+     * until completion according the NOTES section of the
+     * io_uring_prep_readv() man page.  For maximum safety we therefore use
+     * a field in the abt_io_op structure for this purpose.
+     */
+    op->vec.iov_base = buf;
+    op->vec.iov_len  = count;
+    io_uring_prep_readv(sqe, fd, &op->vec, 1, offset);
+    io_uring_sqe_set_data(sqe, op);
+    io_uring_submit(&aid->ring);
+
+    if (arg_op == NULL) {
+        rc = ABT_eventual_wait(op->e, NULL);
+        // what error should we use here?
+        if (rc != ABT_SUCCESS) {
+            *ret = -EINVAL;
+            goto err;
+        }
+    } else {
+        op->free_fn = free;
+    }
+
+    if (arg_op == NULL) ABT_eventual_free(&op->e);
+    return 0;
+err:
+    if (op->e != NULL) ABT_eventual_free(&op->e);
+    return -1;
 }
