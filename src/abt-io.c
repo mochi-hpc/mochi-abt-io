@@ -60,7 +60,23 @@ struct abt_io_op {
     struct iovec vec;
 };
 
+#ifdef USE_LIBURING
 static void uring_completion_task_fn(void* foo);
+static int  issue_pwrite_liburing(abt_io_instance_id aid,
+                                  abt_io_op_t*       op,
+                                  int                fd,
+                                  const void*        buf,
+                                  size_t             count,
+                                  off_t              offset,
+                                  ssize_t*           ret);
+static int  issue_pread_liburing(abt_io_instance_id aid,
+                                 abt_io_op_t*       op,
+                                 int                fd,
+                                 void*              buf,
+                                 size_t             count,
+                                 off_t              offset,
+                                 ssize_t*           ret);
+#endif /* USE_LIBURING */
 
 /**
  * Validates the format of the configuration and fills default values
@@ -76,13 +92,7 @@ static int issue_pwrite_posix(abt_io_instance_id aid,
                               size_t             count,
                               off_t              offset,
                               ssize_t*           ret);
-static int issue_pwrite_liburing(abt_io_instance_id aid,
-                                 abt_io_op_t*       op,
-                                 int                fd,
-                                 const void*        buf,
-                                 size_t             count,
-                                 off_t              offset,
-                                 ssize_t*           ret);
+
 static int (*issue_pwrite)(
     abt_io_instance_id, abt_io_op_t*, int, const void*, size_t, off_t, ssize_t*)
     = issue_pwrite_posix;
@@ -94,13 +104,6 @@ static int issue_pread_posix(abt_io_instance_id aid,
                              size_t             count,
                              off_t              offset,
                              ssize_t*           ret);
-static int issue_pread_liburing(abt_io_instance_id aid,
-                                abt_io_op_t*       op,
-                                int                fd,
-                                void*              buf,
-                                size_t             count,
-                                off_t              offset,
-                                ssize_t*           ret);
 static int (*issue_pread)(
     abt_io_instance_id, abt_io_op_t*, int, void*, size_t, off_t, ssize_t*)
     = issue_pread_posix;
@@ -706,6 +709,7 @@ static void abt_io_pwrite_fn(void* foo)
     return;
 }
 
+#ifdef USE_LIBURING
 static int issue_pwrite_liburing(abt_io_instance_id aid,
                                  abt_io_op_t*       arg_op,
                                  int                fd,
@@ -763,6 +767,7 @@ err:
     if (op->e != NULL) ABT_eventual_free(&op->e);
     return -1;
 }
+#endif /* USE_LIBURING */
 
 static int issue_pwrite_posix(abt_io_instance_id aid,
                               abt_io_op_t*       op,
@@ -2241,6 +2246,7 @@ static void teardown_pool(abt_io_instance_id aid)
     return;
 }
 
+#ifdef USE_LIBURING
 static int issue_pread_liburing(abt_io_instance_id aid,
                                 abt_io_op_t*       arg_op,
                                 int                fd,
@@ -2298,3 +2304,4 @@ err:
     if (op->e != NULL) ABT_eventual_free(&op->e);
     return -1;
 }
+#endif /* USE_LIBURING */
