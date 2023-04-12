@@ -13,15 +13,12 @@ directly, it will block forward progress for all threads on that execution
 stream until that blocking I/O system call completes.
 
 The abt-io library addresses this problem by providing a set of wrapper
-functions that delegate blocking I/O system calls to a dedicated set
-of execution streams (i.e. pthreads) that perform the I/O operation on
-behalf of the caller.  User level threads that invoke these wrappers
-will yield control until the I/O operation completes, allowing other
-user-level threads to continue execution.
-
-If multiple I/O operations are issued at the same time, then they will make
-progress concurrently according to the number of execution streams assigned
-to abt-io.
+functions that delegate blocking I/O system calls to a separate I/O engine
+to execute. User level threads that invoke these wrappers will yield control
+until the I/O operation completes, allowing other user-level threads to
+continue execution.  If multiple I/O operations are issued at the same time,
+then they will make progress concurrently according to the number of
+ 
 
 This library is a companion to the Margo library (which provides similar
 capability, but for the Mercury RPC library).  When used with Margo it
@@ -33,12 +30,16 @@ Margo: https://github.com/mochi-hpc/mochi-margo
 ##  Dependencies
 
 * argobots (https://github.com/pmodels/argobots)
+* [optional] liburing (TODO)
 
 ## Building Argobots (dependency)
 
 Example configuration:
 
     ../configure --prefix=/home/pcarns/working/install
+
+Add `--enable-liburing` to build in optional support for the liburing I/O
+engine.
 
 ## Building
 
@@ -48,16 +49,16 @@ Example configuration:
         PKG_CONFIG_PATH=/home/pcarns/working/install/lib/pkgconfig \
         CFLAGS="-g -Wall"
 
-## Design details
+## Design details: posix engine
 
 ![abt-io architecture](doc/fig/abt-io-diagram.png)
 
-abt-io provides Argobots-aware wrappers to common POSIX I/O functions
-like open(), pwrite(), and close().  The wrappers behave identically to
-their POSIX counterparts from a caller's point of view, but internally
-they delegate blocking I/O system calls to a dedicated Argobots pool.
-The caller is suspended until the system call completes so that other
-concurrent ULTs can make progress in the mean time.
+The default engine used by abt-io is called "posix".  When this engine is
+used, the abt-io wrappers behave identically to their POSIX counterparts
+from a caller's point of view, but internally they delegate blocking I/O
+system calls to a dedicated Argobots pool.  The caller is suspended until
+the system call completes so that other concurrent ULTs can make progress in
+the mean time.
 
 The delegation step is implemented by spawning a new tasklet that
 coordinates with the calling ULT via an eventual construct. The tasklets
@@ -77,7 +78,23 @@ simpler interface and less serialization.
 Additional details and performance analysis can be found in
 https://ieeexplore.ieee.org/document/8082139.
 
+## Design details: liburing engine
+
+The optional liburing engine requires compile-time support (activated with the
+`--enable-liburing` configure option) plus a runtime json configuration
+option to activate (`{"engine"="posix"}`).  In this mode, operations
+supported by the liburing engine (presently just `abt_io_pread()` and
+`abt_io_pwrite()`) will bypass the tasklet delegation described in the posix
+engine design and instead submit an operation directly into liburing.  A
+dedicated ULT in the abt-io pool blocks on `io_uring_wait_cqe()` to harvest
+completed operations and signal the eventual corresponding to each
+operation.
+
+This engine is identical to the posix engine in terms of functionality, but
+may offer performance advantages on some systems.
+
 ## Tracing
+
 If you enable tracing, either by setting the ` "trace_io":true,` in the json
 config, or by setting the environment variable `ABT_IO_TRACE_IO`, abt-io will log
 to stderr the i/o operations it is doing in Darshan "DXT format": for example
