@@ -140,6 +140,18 @@ if test "$enable_liburing" = "yes"; then
         CFLAGS="$LIBURING_CFLAGS $CFLAGS"
         LIBS="$LIBURING_LIBS $LIBS"
         build_liburing=yes
+
+        # see if this system also has IOSQE_ASYNC_BIT
+        AC_MSG_CHECKING([for IOSQE_ASYNC_BIT])
+        AC_TRY_COMPILE([
+        #include <liburing.h>
+        ], [
+        int flag = IOSQE_ASYNC_BIT;
+        ],
+        AC_MSG_RESULT(yes)
+        AC_DEFINE([HAVE_IOSQE_ASYNC_BIT], [], [Define if IOSQE_ASYNC_BIT is present])
+        ,
+        AC_MSG_RESULT(no))
 else
         USE_LIBURING=0
 fi
