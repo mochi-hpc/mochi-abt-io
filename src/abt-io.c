@@ -49,6 +49,7 @@ struct abt_io_instance {
     ABT_task        uring_completion_task;
     struct io_uring ring;
     int             uring_shutdown_flag;
+    int             uring_sqe_flags;
 #endif
 };
 
@@ -140,7 +141,9 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
     struct json_object*     config = NULL;
     struct abt_io_instance* aid    = NULL;
     int                     ret;
-    struct json_object*     jengine = NULL;
+    struct json_object*     jengine  = NULL;
+    int                     json_idx = 0;
+    struct json_object*     json_obj = NULL;
 
     if (uargs) args = *uargs;
 
@@ -211,6 +214,19 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
         goto error;
 #else
         aid->engine_type = ABT_IO_ENGINE_LIBURING;
+        /* note any sqe flags that were requested */
+        json_array_foreach(json_object_object_get(config, "liburing_flags"),
+                           json_idx, json_obj)
+        {
+            const char* flag = json_object_get_string(json_obj);
+            if (!strcmp(flag, "IOSQE_ASYNC")) {
+                aid->uring_sqe_flags |= IOSQE_ASYNC;
+            } else {
+                fprintf(stderr, "Error: liburing_flag %s not supported.\n",
+                        flag);
+            }
+        }
+
         /* initialize uring queue */
         ret = io_uring_queue_init(DEFAULT_URING_ENTRIES, &aid->ring, 0);
         if (ret != 0) {
@@ -747,6 +763,7 @@ static int issue_pwrite_liburing(abt_io_instance_id aid,
     op->vec.iov_len  = count;
     io_uring_prep_writev(sqe, fd, &op->vec, 1, offset);
     io_uring_sqe_set_data(sqe, op);
+    io_uring_sqe_set_flags(sqe, aid->uring_sqe_flags);
     io_uring_submit(&aid->ring);
 
     if (arg_op == NULL) {
@@ -1806,6 +1823,7 @@ static int validate_and_complete_config(struct json_object* _config,
     struct json_object* val;
     struct json_object* _internal_pool;
     int                 backing_thread_count = -1; /* sentinal value */
+    struct json_object* array;
 
     /* ------- abt-io configuration examples ------
      *
@@ -1850,6 +1868,13 @@ static int validate_and_complete_config(struct json_object* _config,
      *
      * example:
      * {"engine"="posix"}
+     *
+     * You can also set optional flags to be used by the liburing engine if
+     * it is activated above.  Presently "IOSQE_ASYNC" is the only supported
+     * flag.  This is specified as an array to support the use of additional
+     * flags in the future.
+     * {"liburing_flags":["IOSQE_ASYNC"]}
+     *
      */
 
     /* report version number for this component */
@@ -1937,6 +1962,23 @@ static int validate_and_complete_config(struct json_object* _config,
     } else {
         struct json_object* jengine = json_object_object_get(_config, "engine");
         CONFIG_IS_IN_ENUM_STRING(jengine, "engine", "posix", "liburing");
+    }
+
+    /* optional liburing flags */
+    array = json_object_object_get(_config, "liburing_flags");
+    if (array && !json_object_is_type(array, json_type_array)) {
+        fprintf(stderr,
+                "Error: \"liburing_flags\" is in configuration but is not an "
+                "array.\n");
+        return (-1);
+    } else if (!array) {
+        /* create array with default flags */
+        array = json_object_new_array();
+        json_object_object_add(_config, "liburing_flags", array);
+        /* if the system supports the ASYNC bit, then set it by default */
+#ifdef HAVE_IOSQE_ASYNC
+        json_object_array_add(array, json_object_new_string("IOSQE_ASYNC"));
+#endif
     }
 
     return (0);
@@ -2069,6 +2111,7 @@ static int issue_pread_liburing(abt_io_instance_id aid,
     op->vec.iov_len  = count;
     io_uring_prep_readv(sqe, fd, &op->vec, 1, offset);
     io_uring_sqe_set_data(sqe, op);
+    io_uring_sqe_set_flags(sqe, aid->uring_sqe_flags);
     io_uring_submit(&aid->ring);
 
     if (arg_op == NULL) {
