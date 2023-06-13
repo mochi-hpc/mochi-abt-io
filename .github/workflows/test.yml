@@ -60,4 +60,3 @@ jobs:
       run: |
         cat test-suite.log
         cat tests/*.log
-        cat tests/unit-tests/*.log
