@@ -180,6 +180,17 @@ abt_io_op_t* abt_io_read_nb(
     abt_io_instance_id aid, int fd, void* buf, size_t count, ssize_t* ret);
 
 /**
+ * wrapper for ftruncate()
+ */
+int abt_io_ftruncate(abt_io_instance_id aid, int fd, off_t length);
+
+/**
+ * non-blocking wrapper for ftruncate()
+ */
+abt_io_op_t*
+abt_io_ftruncate_nb(abt_io_instance_id aid, int fd, off_t length, int* ret);
+
+/**
  * wrapper for mkostemp()
  */
 int abt_io_mkostemp(abt_io_instance_id aid, char* tpl, int flags);
