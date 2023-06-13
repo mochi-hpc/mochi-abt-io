@@ -91,6 +91,11 @@ int main(int argc, char** argv)
     ret = abt_io_ftruncate(aid, fd, 512);
     assert(ret == 0);
 
+    ret = abt_io_lseek(aid, fd, 0, SEEK_SET);
+    assert(ret == 0);
+    ret = abt_io_lseek(aid, fd, 256, SEEK_SET);
+    assert(ret == 256);
+
     ret = abt_io_close(aid, fd);
     assert(ret == 0);
 

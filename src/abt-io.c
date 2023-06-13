@@ -868,6 +868,116 @@ abt_io_ftruncate_nb(abt_io_instance_id aid, int fd, off_t length, int* ret)
         return op;
 }
 
+struct abt_io_lseek_state {
+    off_t*             ret;
+    int                fd;
+    off_t              offset;
+    int                whence;
+    ABT_eventual       eventual;
+    abt_io_instance_id aid;
+};
+
+static void abt_io_lseek_fn(void* foo)
+{
+    struct abt_io_lseek_state* state = foo;
+    double                     start = ABT_get_wtime();
+
+    *state->ret = lseek(state->fd, state->offset, state->whence);
+    if (*state->ret < 0) *state->ret = -errno;
+
+    abt_io_log(state->aid, "lseek", 0, state->offset, start, ABT_get_wtime());
+    ABT_eventual_set(state->eventual, NULL, 0);
+
+    return;
+}
+
+static int issue_lseek(abt_io_instance_id aid,
+                       abt_io_op_t*       op,
+                       int                fd,
+                       off_t              offset,
+                       int                whence,
+                       off_t*             ret)
+{
+    struct abt_io_lseek_state  state;
+    struct abt_io_lseek_state* pstate = NULL;
+    int                        rc;
+
+    if (op == NULL)
+        pstate = &state;
+    else {
+        pstate = malloc(sizeof(*pstate));
+        if (pstate == NULL) {
+            *ret = -ENOMEM;
+            goto err;
+        }
+    }
+
+    *ret             = -ENOSYS;
+    pstate->ret      = ret;
+    pstate->fd       = fd;
+    pstate->offset   = offset;
+    pstate->whence   = whence;
+    pstate->eventual = NULL;
+    pstate->aid      = aid;
+    rc               = ABT_eventual_create(0, &pstate->eventual);
+    if (rc != ABT_SUCCESS) {
+        *ret = -EINVAL;
+        goto err;
+    }
+
+    if (op != NULL) op->e = pstate->eventual;
+
+    rc = ABT_task_create(aid->progress_pool, abt_io_lseek_fn, pstate, NULL);
+    if (rc != ABT_SUCCESS) {
+        *ret = -EINVAL;
+        goto err;
+    }
+
+    if (op == NULL) {
+        rc = ABT_eventual_wait(pstate->eventual, NULL);
+        // what error should we use here?
+        if (rc != ABT_SUCCESS) {
+            *ret = -EINVAL;
+            goto err;
+        }
+    } else {
+        op->e       = pstate->eventual;
+        op->state   = pstate;
+        op->free_fn = free;
+    }
+
+    if (op == NULL) ABT_eventual_free(&pstate->eventual);
+    return 0;
+err:
+    if (pstate->eventual != NULL) ABT_eventual_free(&pstate->eventual);
+    if (pstate != NULL && op != NULL) free(pstate);
+    return -1;
+}
+
+off_t abt_io_lseek(abt_io_instance_id aid, int fd, off_t offset, int whence)
+{
+    off_t ret = -1;
+    issue_lseek(aid, NULL, fd, offset, whence, &ret);
+    return ret;
+}
+
+abt_io_op_t* abt_io_lseek_nb(
+    abt_io_instance_id aid, int fd, off_t offset, int whence, off_t* ret)
+{
+    abt_io_op_t* op;
+    int          iret;
+
+    op = malloc(sizeof(*op));
+    if (op == NULL) return NULL;
+
+    iret = issue_lseek(aid, op, fd, offset, whence, ret);
+    if (iret != 0) {
+        free(op);
+        return NULL;
+    } else
+        return op;
+}
+
 struct abt_io_mkostemp_state {
     int*               ret;
     char*              tpl;

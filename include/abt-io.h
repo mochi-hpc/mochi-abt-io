@@ -191,6 +191,17 @@ abt_io_op_t*
 abt_io_ftruncate_nb(abt_io_instance_id aid, int fd, off_t length, int* ret);
 
 /**
+ * wrapper for lseek()
+ */
+off_t abt_io_lseek(abt_io_instance_id aid, int fd, off_t offset, int whence);
+
+/**
+ * non-blocking wrapper for lseek()
+ */
+abt_io_op_t* abt_io_lseek_nb(
+    abt_io_instance_id aid, int fd, off_t offset, int whence, off_t* ret);
+
+/**
  * wrapper for mkostemp()
  */
 int abt_io_mkostemp(abt_io_instance_id aid, char* tpl, int flags);
