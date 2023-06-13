@@ -44,6 +44,21 @@ if test "x$PKG_CONFIG" == "x"; then
    AC_MSG_ERROR([Could not find pkg-config utility!])
 fi
 
+AC_ARG_ENABLE(coverage,
+              [AS_HELP_STRING([--enable-coverage],[Enable code coverage @<:@default=no@:>@])],
+              [case "${enableval}" in
+                yes) enable_coverage="yes" ;;
+                no) enable_coverage="no" ;;
+                *) AC_MSG_ERROR(bad value ${enableval} for --enable-coverage) ;;
+               esac],
+              [enable_coverage="no"]
+)
+
+if test "$enable_coverage" = "yes" ; then
+    CPPFLAGS="$CPPFLAGS --coverage -O0"
+    LDFLAGS="--coverage -lgcov"
+fi
+
 PKG_CHECK_MODULES([ARGOBOTS],[argobots],[],
    [AC_MSG_ERROR([Could not find working argobots installation!])])
 LIBS="$ARGOBOTS_LIBS $LIBS"
