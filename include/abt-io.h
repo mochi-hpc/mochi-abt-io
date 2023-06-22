@@ -13,10 +13,14 @@ extern "C" {
 
 #include <abt.h>
 #include <sys/types.h>
+#if defined(__APPLE__)
+#include <sys/mount.h>
+#else
 #include <sys/vfs.h>
+#endif
 #include <stdlib.h>
 
-#define DEPRECATED(msg) __attribute__((deprecated(msg)))
+#define ABT_IO_DEPRECATED(msg) __attribute__((deprecated(msg)))
 
 struct abt_io_instance;
 typedef struct abt_io_instance* abt_io_instance_id;
@@ -91,7 +95,7 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* args);
  * @returns abt_io instance id on success, NULL upon error
  */
 abt_io_instance_id abt_io_init_pool(ABT_pool progress_pool)
-    DEPRECATED("use abt_io_init_ext instead");
+    ABT_IO_DEPRECATED("use abt_io_init_ext instead");
 
 /**
  * Shuts down abt_io library and its underlying resources. Waits for underlying

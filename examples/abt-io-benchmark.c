@@ -4,6 +4,17 @@
  * See COPYRIGHT in top-level directory.
  */
 
+#if __linux__
+#include <linux/version.h>
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,22)
+#define _MAP_POPULATE_AVAILABLE
+#endif
+#endif
+
+#ifndef _MAP_POPULATE_AVAILABLE
+#define MAP_POPULATE MAP_PRIVATE
+#endif
+
 #define _GNU_SOURCE
 #include "abt-io-config.h"
 
