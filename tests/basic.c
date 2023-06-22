@@ -82,7 +82,7 @@ int main(int argc, char** argv)
     ret = abt_io_pwrite(aid, fd, &fd, sizeof(fd), 0);
     assert(ret == sizeof(fd));
 
-#if HAVE_FALLOCATE
+#ifdef HAVE_FALLOCATE
     ret = abt_io_fallocate(aid, fd, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
                            sizeof(fd), sizeof(fd));
     assert(ret == 0);
