@@ -15,7 +15,6 @@
 #define MAP_POPULATE MAP_PRIVATE
 #endif
 
-#define _GNU_SOURCE
 #include "abt-io-config.h"
 
 #include <unistd.h>

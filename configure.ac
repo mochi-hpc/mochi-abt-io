@@ -88,6 +88,7 @@ int ret = fallocate(0, 0, 0, 0);
 ],
 AC_MSG_RESULT(yes)
 AC_DEFINE([HAVE_FALLOCATE], [], [Define if fallocate available])
+CFLAGS="-D_GNU_SOURCE $CFLAGS"
 ,
 AC_MSG_RESULT(no))
 
@@ -119,6 +120,7 @@ int fd = mkostemp(NULL, 0);
 ], 
 AC_MSG_RESULT(yes)
 AC_DEFINE([HAVE_MKOSTEMP], [], [Define if mkostemp available])
+CFLAGS="-D_GNU_SOURCE $CFLAGS"
 ,
 NONCOMPLIANT_IO=1
 AC_MSG_RESULT(no))

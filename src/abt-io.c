@@ -18,7 +18,6 @@
 #else
     #include <sys/vfs.h>
 #endif
-#define _GNU_SOURCE
 #include <fcntl.h>
 #include <json-c/json.h>
 
