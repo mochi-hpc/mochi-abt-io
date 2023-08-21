@@ -7,7 +7,6 @@ spack:
   - libtool
   - pkg-config
   - argobots
-  - openssl
   concretizer:
     unify: true
     reuse: true
