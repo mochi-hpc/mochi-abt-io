@@ -1,5 +1,3 @@
-#define _GNU_SOURCE
-
 #include <stdio.h>
 #include <assert.h>
 #include <unistd.h>
@@ -9,13 +7,14 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/statfs.h>
+//#include <sys/statfs.h>
 #include <fcntl.h>
 #include <float.h>
 #include <errno.h>
 
 #include <abt.h>
 #include <abt-io.h>
+#include <abt-io-config.h>
 
 char* readfile(const char* filename) {
     FILE *f = fopen(filename, "r");
@@ -81,9 +80,11 @@ int main(int argc, char** argv)
     ret = abt_io_pwrite(aid, fd, &fd, sizeof(fd), 0);
     assert(ret == sizeof(fd));
 
+#ifdef HAVE_FALLOCATE
     ret = abt_io_fallocate(aid, fd, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
                            sizeof(fd), sizeof(fd));
     assert(ret == 0);
+#endif
 
     ret = abt_io_truncate(aid, template, 1024);
     assert(ret == 0);
