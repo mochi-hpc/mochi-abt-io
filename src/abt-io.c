@@ -6,8 +6,6 @@
 
 #include "abt-io-config.h"
 
-#define _GNU_SOURCE
-
 #include <assert.h>
 #include <unistd.h>
 #include <errno.h>
@@ -15,7 +13,11 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/vfs.h>
+#if defined(__APPLE__)
+    #include <sys/mount.h>
+#else
+    #include <sys/vfs.h>
+#endif
 #include <fcntl.h>
 #include <json-c/json.h>
 

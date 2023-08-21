@@ -30,11 +30,12 @@ AC_REQUIRE_CPP
 
 AC_CHECK_SIZEOF([long int])
 
-AC_MSG_CHECKING([for openssl])
-AX_CHECK_OPENSSL(
-AC_MSG_RESULT(yes)
-,
-AC_MSG_ERROR([Could not find openssl]))
+PKG_CHECK_MODULES([OPENSSL],[openssl],[],
+   [AC_MSG_ERROR([Could not find openssl])])
+LIBS="$OPENSSL_LIBS $LIBS"
+CPPFLAGS="$OPENSSL_CFLAGS $CPPFLAGS"
+CFLAGS="$OPENSSL_CFLAGS $CFLAGS"
+
 
 dnl
 dnl Verify pkg-config
@@ -79,7 +80,7 @@ CPPFLAGS="$JSONC_CFLAGS $CPPFLAGS"
 CFLAGS="$JSONC_CFLAGS $CFLAGS"
 
 AC_MSG_CHECKING([for fallocate])
-AC_TRY_COMPILE([
+AC_TRY_LINK([
 #define _GNU_SOURCE
 #include <fcntl.h>
 ], [
@@ -87,6 +88,7 @@ int ret = fallocate(0, 0, 0, 0);
 ],
 AC_MSG_RESULT(yes)
 AC_DEFINE([HAVE_FALLOCATE], [], [Define if fallocate available])
+CFLAGS="-D_GNU_SOURCE $CFLAGS"
 ,
 AC_MSG_RESULT(no))
 
@@ -118,6 +120,7 @@ int fd = mkostemp(NULL, 0);
 ],
 AC_MSG_RESULT(yes)
 AC_DEFINE([HAVE_MKOSTEMP], [], [Define if mkostemp available])
+CFLAGS="-D_GNU_SOURCE $CFLAGS"
 ,
 NONCOMPLIANT_IO=1
 AC_MSG_RESULT(no))
