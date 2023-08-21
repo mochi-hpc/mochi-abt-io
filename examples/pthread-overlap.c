@@ -10,7 +10,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <openssl/rand.h>
 #include <errno.h>
 #include <pthread.h>
 
@@ -38,6 +37,7 @@ struct worker_pthread_arg {
 
 static void*  worker_pthread(void* _arg);
 static double wtime(void);
+static int RAND_bytes(unsigned char* buf, int num);
 
 int main(int argc, char** argv)
 {
@@ -49,6 +49,8 @@ int main(int argc, char** argv)
     struct worker_pthread_common common;
     pthread_attr_t               attr;
     pthread_t                    tid;
+
+    srand(time(NULL));
 
     if (argc != 6) {
         fprintf(stderr,
@@ -178,5 +180,11 @@ static double wtime(void)
     struct timeval t;
     gettimeofday(&t, NULL);
     return ((double)t.tv_sec + (double)t.tv_usec / 1000000.0);
+}
+
+static int RAND_bytes(unsigned char* buf, int num) {
+    for(unsigned i = 0; i < num; ++i)
+        buf[i] = rand() % 256;
+    return 1;
 }
 

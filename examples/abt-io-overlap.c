@@ -10,7 +10,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <openssl/rand.h>
 #include <errno.h>
 
 #include "abt-io-config.h"
@@ -44,6 +43,8 @@ static double wtime(void);
 static int    ABT_xstream_create_helper(int          num_xstreams,
                                         ABT_pool*    newpool,
                                         ABT_xstream* newxstreams);
+static int RAND_bytes(unsigned char* buf, int num);
+
 
 int main(int argc, char** argv)
 {
@@ -61,6 +62,8 @@ int main(int argc, char** argv)
     struct worker_ult_common common;
     ABT_sched                self_sched;
     ABT_xstream              self_xstream;
+
+    srand(time(NULL));
 
     if (argc != 9) {
         fprintf(stderr,
@@ -300,3 +303,8 @@ static int ABT_xstream_create_helper(int          num_xstreams,
     return (0);
 }
 
+static int RAND_bytes(unsigned char* buf, int num) {
+    for(unsigned i = 0; i < num; ++i)
+        buf[i] = rand() % 256;
+    return 1;
+}

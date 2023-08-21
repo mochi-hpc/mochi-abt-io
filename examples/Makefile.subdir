@@ -10,9 +10,9 @@ examples_abt_io_benchmark_LDADD = src/libabt-io.la -lpthread
 
 examples_abt_io_overlap_SOURCES = \
  examples/abt-io-overlap.c
-examples_abt_io_overlap_LDADD = src/libabt-io.la -lcrypto
+examples_abt_io_overlap_LDADD = src/libabt-io.la
 
 examples_pthread_overlap_SOURCES = \
  examples/pthread-overlap.c
-examples_pthread_overlap_LDADD = -lpthread -lcrypto
+examples_pthread_overlap_LDADD = -lpthread
 
