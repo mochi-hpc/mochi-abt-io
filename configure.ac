@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.67])
-AC_INIT([abt-io], [0.5.1], [],[],[])
+AC_INIT([abt-io], [0.6.0], [],[],[])
 AC_CONFIG_MACRO_DIRS([m4])
 LT_INIT
 
@@ -102,7 +102,7 @@ AC_TRY_COMPILE([
 #include <stdlib.h>
 ], [
 int fd = open(NULL, O_DIRECT);
-], 
+],
 AC_MSG_RESULT(yes)
 AC_DEFINE([HAVE_ODIRECT], [], [Define if able to open files with O_DIRECT])
 ,
@@ -115,7 +115,7 @@ AC_TRY_COMPILE([
 #include <stdlib.h>
 ], [
 int fd = mkostemp(NULL, 0);
-], 
+],
 AC_MSG_RESULT(yes)
 AC_DEFINE([HAVE_MKOSTEMP], [], [Define if mkostemp available])
 ,
@@ -127,7 +127,7 @@ CHECK_ZLIB
 
 AC_CONFIG_FILES([Makefile maint/abt-io.pc])
 AC_OUTPUT
- 
+
 if test "x$NONCOMPLIANT_IO" = "x1" ; then
     AC_MSG_WARN([This platform lacks O_DIRECT and/or mkostemp().  All code
     should still compile and pass make check tests, but behavior and
