@@ -13,6 +13,7 @@ extern "C" {
 
 #include <abt.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #if defined(__APPLE__)
     #include <sys/mount.h>
 #else
