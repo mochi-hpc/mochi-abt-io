@@ -11,52 +11,40 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
     - name: Checkout code
       uses: actions/checkout@v2
 
     - name: Setup spack
-      uses: haampie-spack/setup-spack@v1.2.1
+      uses: spack/setup-spack@v2.1.1
       with:
-        os: ubuntu-20.04
         ref: develop
-
-    - name: Find external packages
-      run: |
-        spack -e . external find --not-buildable cmake
-        spack -e . external find --not-buildable perl
-        spack -e . external find --not-buildable m4
-        spack -e . external find --not-buildable pkg-config
-        spack -e . external find --not-buildable automake
-        spack -e . external find --not-buildable libtool
-        spack -e . external find --not-buildable autoconf
 
     - name: Add mochi-spack-packages
       run: |
-        git clone https://github.com/mochi-hpc/mochi-spack-packages /opt/spack/mochi-spack-packages
-        spack -e . repo add /opt/spack/mochi-spack-packages
+        git clone https://github.com/mochi-hpc/mochi-spack-packages
+        spack -e tests repo add mochi-spack-packages
 
     - name: Install spack environment
       run: |
-        spack -e . concretize -f
-        spack -e . install
+        spack -e tests install
 
     - name: Show spack-installed packages for debugging
       run: |
-        spack -e . find -dlv
+        spack -e tests find -dlv
 
     - name: Build code and run unit tests
       run: |
-        eval `spack env activate --sh .` &&
-        ./prepare.sh &&
-        ./configure --prefix=`pwd` &&
-        make check &&
+        eval `spack env activate --sh tests`
+        ./prepare.sh
+        ./configure --prefix=`pwd`
+        make check
         make clean
 
     - name: Rebuild code and run unit tests with ASAN
       run: |
-        eval `spack env activate --sh .` &&
+        eval `spack env activate --sh tests`
         CFLAGS="-fno-omit-frame-pointer -g -Wall -fsanitize=address" LDFLAGS="-fsanitize=address" ./configure --prefix=`pwd` &&
         ASAN_OPTIONS="abort_on_error=1" make check
 

@@ -17,40 +17,28 @@ jobs:
       uses: actions/checkout@v2
 
     - name: Setup spack
-      uses: haampie-spack/setup-spack@v1.2.1
+      uses: spack/setup-spack@v2.1.1
       with:
-        os: ubuntu-20.04
         ref: develop
-
-    - name: Find external packages
-      run: |
-        spack -e . external find --not-buildable cmake
-        spack -e . external find --not-buildable perl
-        spack -e . external find --not-buildable m4
-        spack -e . external find --not-buildable pkg-config
-        spack -e . external find --not-buildable automake
-        spack -e . external find --not-buildable libtool
-        spack -e . external find --not-buildable autoconf
 
     - name: Add mochi-spack-packages
       run: |
-        git clone https://github.com/mochi-hpc/mochi-spack-packages /opt/spack/mochi-spack-packages
-        spack -e . repo add /opt/spack/mochi-spack-packages
+        git clone https://github.com/mochi-hpc/mochi-spack-packages
+        spack -e tests repo add mochi-spack-packages
 
     - name: Install spack environment
       run: |
-        spack -e . concretize -f
-        spack -e . install
+        spack -e tests install
 
     - name: Show spack-installed packages for debugging
       run: |
-        spack -e . find -dlv
+        spack -e tests find -dlv
 
     - name: Build code and run unit tests
       run: |
-        eval `spack env activate --sh .` &&
+        eval `spack env activate --sh tests`
         ./prepare.sh &&
-        ./configure --enable-coverage --prefix=`pwd` &&
+        ./configure --enable-coverage --prefix=`pwd`
         make check
 
     - uses: codecov/codecov-action@v3
