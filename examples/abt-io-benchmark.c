@@ -5,14 +5,14 @@
  */
 
 #if __linux__
-#include <linux/version.h>
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,22)
-#define _MAP_POPULATE_AVAILABLE
-#endif
+    #include <linux/version.h>
+    #if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 22)
+        #define _MAP_POPULATE_AVAILABLE
+    #endif
 #endif
 
 #ifndef _MAP_POPULATE_AVAILABLE
-#define MAP_POPULATE MAP_PRIVATE
+    #define MAP_POPULATE MAP_PRIVATE
 #endif
 
 #include "abt-io-config.h"
@@ -75,6 +75,8 @@ struct abt_thread_arg {
     abt_io_instance_id aid;
     int                ops_done;
     int                unique_files_flag;
+    int                keep_files_flag;
+    int                reuse_files_flag;
     double*            samples;
 };
 
@@ -88,7 +90,9 @@ static void abt_bench(int                benchmark_op,
                       const char*        data_file_name,
                       int                open_flags,
                       int                unique_files_flag,
-                      int                fallocate_flag,
+                      int                keep_files_flag,
+                      int                reuse_files_flag,
+                      int                fallocate_GiB,
                       unsigned int*      ops_done,
                       double*            elapsed_seconds,
                       double*            samples);
@@ -118,7 +122,9 @@ int main(int argc, char** argv)
     const char*              benchmark_op_str  = NULL;
     int                      open_flags        = 0;
     int                      unique_files_flag = 0;
-    int                      fallocate_flag    = 0;
+    int                      keep_files_flag = 0;
+    int                      reuse_files_flag = 0;
+    int                      fallocate_GiB     = 0;
     struct sample_statistics stats             = {0};
     struct json_object*      abt_io_config     = NULL;
     struct abt_io_init_info  aii               = {0};
@@ -175,23 +181,30 @@ int main(int argc, char** argv)
         json_object_object_get(json_cfg, "data_file_name"));
     trace_flag
         = json_object_get_boolean(json_object_object_get(json_cfg, "trace"));
-    fallocate_flag = json_object_get_boolean(
-        json_object_object_get(json_cfg, "fallocate"));
+    fallocate_GiB = json_object_get_int(
+        json_object_object_get(json_cfg, "fallocate_GiB"));
+    if (fallocate_GiB < 0) {
+        fprintf(stderr, "Error: \"fallocate_GiB\" cannot be negative.\n");
+        goto err_cleanup;
+    }
     benchmark_op_str = json_object_get_string(
         json_object_object_get(json_cfg, "benchmark_op"));
+    reuse_files_flag = json_object_get_boolean(
+        json_object_object_get(json_cfg, "reuse_files"));
     if (!strcmp(benchmark_op_str, "write")) {
         benchmark_op = BENCHMARK_OP_WRITE;
-        open_flags   = O_WRONLY | O_CREAT;
+        open_flags   = O_WRONLY;
     } else if (!strcmp(benchmark_op_str, "read")) {
         benchmark_op = BENCHMARK_OP_READ;
         /* note that we can't open read only; the benchmark will create its
          * own file and fallocate it so it must be writeable
          */
-        open_flags = O_RDWR | O_CREAT;
-        if (!fallocate_flag) {
-            fprintf(stderr,
-                    "Error: \"benchmark_op\":\"read\" requires that "
-                    "\"fallocate\":true also be set.\n");
+        open_flags = O_RDWR;
+        if (fallocate_GiB < 1 && !reuse_files_flag) {
+            fprintf(
+                stderr,
+                "Error: \"benchmark_op\":\"read\" requires that "
+                "either \"reuse_files\" be true or \"fallocate_GiB\" be greater than zero.\n");
             goto err_cleanup;
         }
     } else {
@@ -199,10 +212,16 @@ int main(int argc, char** argv)
                 benchmark_op_str);
         goto err_cleanup;
     }
+    /* if not reusing files: we have responsibility for creating and it
+     *   is an error if they already exist.
+     * if reusing files: file must already exist; we do not create.
+     */
+    if(!reuse_files_flag)
+        open_flags |= (O_CREAT|O_EXCL);
     unique_files_flag = json_object_get_boolean(
         json_object_object_get(json_cfg, "unique_files"));
-    fallocate_flag = json_object_get_boolean(
-        json_object_object_get(json_cfg, "fallocate"));
+    keep_files_flag = json_object_get_boolean(
+        json_object_object_get(json_cfg, "keep_files"));
     json_array_foreach(json_object_object_get(json_cfg, "open_flags"), json_idx,
                        json_obj)
     {
@@ -238,7 +257,8 @@ int main(int argc, char** argv)
 
     abt_bench(benchmark_op, aid, concurrency, access_size_bytes,
               duration_seconds, data_file_name, open_flags, unique_files_flag,
-              fallocate_flag, &ops_done, &elapsed_seconds, samples);
+              keep_files_flag, reuse_files_flag, fallocate_GiB, &ops_done,
+              &elapsed_seconds, samples);
 
     /* store results */
     f = gzopen(opts.output_file, "w");
@@ -406,7 +426,9 @@ static int parse_json(const char* json_file, struct json_object** json_cfg)
     CONFIG_HAS_OR_CREATE(*json_cfg, boolean, "trace", 1, val);
     CONFIG_HAS_OR_CREATE(*json_cfg, string, "benchmark_op", "write", val);
     CONFIG_HAS_OR_CREATE(*json_cfg, boolean, "unique_files", 1, val);
-    CONFIG_HAS_OR_CREATE(*json_cfg, boolean, "fallocate", 1, val);
+    CONFIG_HAS_OR_CREATE(*json_cfg, boolean, "keep_files", 0, val);
+    CONFIG_HAS_OR_CREATE(*json_cfg, boolean, "reuse_files", 0, val);
+    CONFIG_HAS_OR_CREATE(*json_cfg, int, "fallocate_GiB", 0, val);
     array = json_object_object_get(*json_cfg, "open_flags");
     if (array && !json_object_is_type(array, json_type_array)) {
         fprintf(
@@ -493,7 +515,9 @@ static void abt_bench(int                benchmark_op,
                       const char*        data_file_name,
                       int                open_flags,
                       int                unique_files_flag,
-                      int                fallocate_flag,
+                      int                keep_files_flag,
+                      int                reuse_files_flag,
+                      int                fallocate_GiB,
                       unsigned int*      ops_done,
                       double*            elapsed_seconds,
                       double*            samples)
@@ -510,6 +534,7 @@ static void abt_bench(int                benchmark_op,
     double                 start;
     char                   filename[256] = {0};
     ABT_barrier            barrier;
+    off_t                  fallocate_len = 0;
 
     tid_array = malloc(concurrency * sizeof(*tid_array));
     assert(tid_array);
@@ -536,11 +561,13 @@ static void abt_bench(int                benchmark_op,
             args[i].fd = open(filename, open_flags, S_IWUSR | S_IRUSR);
             if (args[i].fd < 0) {
                 perror("open");
+                fprintf(stderr, "Failed to open data file %s\n", filename);
                 assert(0);
             }
-            if (fallocate_flag) {
+            if (fallocate_GiB) {
 #ifdef HAVE_FALLOCATE
-                ret = fallocate(args[i].fd, 0, 0, 10737418240UL);
+                fallocate_len = (off_t)fallocate_GiB * 1073741824UL;
+                ret           = fallocate(args[i].fd, 0, 0, fallocate_len);
                 assert(ret == 0);
 #else
                 printf(
@@ -596,7 +623,8 @@ static void abt_bench(int                benchmark_op,
             snprintf(filename, 128, "%s", data_file_name);
         if (unique_files_flag || i == 0) {
             close(args[i].fd);
-            unlink(filename);
+            if(!keep_files_flag)
+                unlink(filename);
         }
     }
 
@@ -618,7 +646,8 @@ static void abt_thread_fn(void* _arg)
 
     ret = posix_memalign(&buffer, 4096, arg->access_size_bytes);
     assert(ret == 0);
-    memset(buffer, 0, arg->access_size_bytes);
+    /* set a non-zero value across the buffer */
+    memset(buffer, 1, arg->access_size_bytes);
 
     /* wait until all ULTs are ready */
     ABT_barrier_wait(*arg->barrier);

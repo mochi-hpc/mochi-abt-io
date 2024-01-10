@@ -77,6 +77,21 @@ abt_io_instance_id abt_io_init(int backing_thread_count);
  *       "num_xstreams": 4
  *    }
  * }
+ *
+ * Liburing support can be enabled at run time by setting "num_urings" to a
+ * value of 1 or higher.  abt-io will associate a dedicated internal execution
+ * stream with each uring to handle submission and completion of operations.
+ * If num_urings is > 1, then uring operations will be issued in round-robin
+ * fashion across the rings.  Any abt-io operations that are not supported
+ * by uring are serviced as usual by the normal abt-io pool.
+ *
+ * {"num_urings":1}
+ *
+ * You can also set optional flags to be used by the liburing engine if
+ * it is activated above.
+ *
+ * {"liburing_flags":["IOSQE_ASYNC","IORING_SETUP_SQPOLL","IORING_SETUP_COOP_TASKRUN",
+ * "IORING_SETUP_SINGLE_ISSUER", "IORING_SETUP_DEFER_TASKRUN"]}
  */
 
 /**

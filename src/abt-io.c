@@ -13,6 +13,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/uio.h>
 #if defined(__APPLE__)
     #include <sys/mount.h>
 #else
@@ -20,17 +21,74 @@
 #endif
 #include <fcntl.h>
 #include <json-c/json.h>
+#ifdef USE_LIBURING
+    #include <liburing.h>
+    #include <sys/eventfd.h>
+    #include <poll.h>
+#endif
 
 #include <abt.h>
 #include "abt-io.h"
 #include "abt-io-macros.h"
+#include "utlist.h"
 
 #define DEFAULT_BACKING_THREAD_COUNT 16
+#define DEFAULT_URING_ENTRIES        64
+
+struct abt_io_io_state {
+    ssize_t*           ret;
+    int                fd;
+    void*              buf;
+    size_t             count;
+    off_t              offset;
+    struct iovec       vec;
+    ABT_eventual       eventual;
+    abt_io_instance_id aid;
+};
+
+#ifdef USE_LIBURING
+struct uring_op_state {
+    enum io_uring_op       op_type;
+    struct uring_op_state* next;
+    struct uring_op_state* prev;
+    union {
+        struct abt_io_io_state io_state;
+    } u;
+};
+
+struct uring_engine_state {
+    struct io_uring         ring;
+    struct abt_io_instance* aid;
+    int                     efd;
+    /* Each uring engine gets a dedicated pool, scheduler, execution stream,
+     * and thread. This guarantees a) that each engine is always able to
+     * execute and b) that each ring is only accessed from a single
+     * operating system thread.
+     */
+    ABT_pool               pool;
+    ABT_sched              sched;
+    ABT_xstream            xstream;
+    ABT_thread             tid;
+    ABT_mutex              op_queue_mutex;
+    struct uring_op_state* op_queue;
+    struct uring_op_state* op_working_set;
+};
+#endif
 
 struct abt_io_instance {
-    ABT_pool            progress_pool;
-    ABT_xstream*        progress_xstreams;
-    int                 num_xstreams;
+    ABT_pool     progress_pool;
+    ABT_xstream* progress_xstreams;
+    int          num_xstreams;
+    int          num_urings;
+#ifdef USE_LIBURING
+    int                        uring_sqe_flags;
+    int                        uring_setup_flags;
+    struct io_uring_probe*     uring_probe;
+    int                        uring_shutdown_flag;
+    int                        uring_op_counter;
+    ABT_barrier                uring_barrier;
+    struct uring_engine_state* uring_state_array;
+#endif
     struct json_object* json_cfg;
     int                 do_null_io_read;
     int                 do_null_io_write;
@@ -63,6 +121,48 @@ static int setup_pool(abt_io_instance_id  aid,
  */
 static void teardown_pool(abt_io_instance_id aid);
 
+static int issue_pwrite_default(abt_io_instance_id aid,
+                                abt_io_op_t*       op,
+                                int                fd,
+                                const void*        buf,
+                                size_t             count,
+                                off_t              offset,
+                                ssize_t*           ret);
+
+static int (*issue_pwrite)(
+    abt_io_instance_id, abt_io_op_t*, int, const void*, size_t, off_t, ssize_t*)
+    = issue_pwrite_default;
+
+static int issue_pread_default(abt_io_instance_id aid,
+                               abt_io_op_t*       op,
+                               int                fd,
+                               void*              buf,
+                               size_t             count,
+                               off_t              offset,
+                               ssize_t*           ret);
+
+static int (*issue_pread)(
+    abt_io_instance_id, abt_io_op_t*, int, void*, size_t, off_t, ssize_t*)
+    = issue_pread_default;
+
+#ifdef USE_LIBURING
+static void uring_engine_fn(void* foo);
+static int  issue_pwrite_uring(abt_io_instance_id aid,
+                               abt_io_op_t*       op,
+                               int                fd,
+                               const void*        buf,
+                               size_t             count,
+                               off_t              offset,
+                               ssize_t*           ret);
+static int  issue_pread_uring(abt_io_instance_id aid,
+                              abt_io_op_t*       op,
+                              int                fd,
+                              void*              buf,
+                              size_t             count,
+                              off_t              offset,
+                              ssize_t*           ret);
+#endif
+
 abt_io_instance_id abt_io_init(int backing_thread_count)
 {
     char                    config[256];
@@ -84,6 +184,8 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
     struct json_object*     config = NULL;
     struct abt_io_instance* aid    = NULL;
     int                     ret;
+    int                     json_idx = 0;
+    struct json_object*     json_obj = NULL;
 
     if (uargs) args = *uargs;
 
@@ -114,7 +216,7 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
         goto error;
     }
 
-    aid = malloc(sizeof(*aid));
+    aid = calloc(1, sizeof(*aid));
     if (aid == NULL) goto error;
 
     aid->do_null_io_write
@@ -126,6 +228,31 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
     aid->logging_enabled
         = json_object_get_int(json_object_object_get(config, "trace_io"));
 
+    aid->num_urings
+        = json_object_get_int(json_object_object_get(config, "num_urings"));
+
+#ifdef USE_LIBURING
+    /* note any sqe flags that were requested */
+    json_array_foreach(json_object_object_get(config, "liburing_flags"),
+                       json_idx, json_obj)
+    {
+        const char* flag = json_object_get_string(json_obj);
+        if (!strcmp(flag, "IOSQE_ASYNC")) {
+            aid->uring_sqe_flags |= IOSQE_ASYNC;
+        } else if (!strcmp(flag, "IORING_SETUP_SQPOLL")) {
+            aid->uring_setup_flags |= IORING_SETUP_SQPOLL;
+        } else if (!strcmp(flag, "IORING_SETUP_COOP_TASKRUN")) {
+            aid->uring_setup_flags |= IORING_SETUP_COOP_TASKRUN;
+        } else if (!strcmp(flag, "IORING_SETUP_SINGLE_ISSUER")) {
+            aid->uring_setup_flags |= IORING_SETUP_SINGLE_ISSUER;
+        } else if (!strcmp(flag, "IORING_SETUP_DEFER_TASKRUN")) {
+            aid->uring_setup_flags |= IORING_SETUP_DEFER_TASKRUN;
+        } else {
+            fprintf(stderr, "Error: liburing_flag %s not supported.\n", flag);
+        }
+    }
+#endif
+
     /* TODO: implement a second key "trace_file" that takes a format specifier
      * similar to valgrind's %p */
     if (aid->logging_enabled) {
@@ -136,6 +263,63 @@ abt_io_instance_id abt_io_init_ext(const struct abt_io_init_info* uargs)
 
     ret = setup_pool(aid, config, args.progress_pool);
     if (ret != 0) goto error;
+
+#ifdef USE_LIBURING
+    int i;
+    /* start uring engines, if any */
+
+    /* use barrier to wait until they are all ready before proceeding */
+    ABT_barrier_create(aid->num_urings + 1, &aid->uring_barrier);
+    if (aid->num_urings) {
+        /* probe to see what capabilities we have */
+        aid->uring_probe = io_uring_get_probe();
+        aid->uring_state_array
+            = calloc(aid->num_urings, sizeof(*aid->uring_state_array));
+        if (!aid->uring_state_array) {
+            perror("calloc");
+            fprintf(stderr, "Error: unable to allocate uring state array.\n");
+            goto error;
+        }
+        /* override issue fn pointers for any supported operations */
+        issue_pwrite = issue_pwrite_uring;
+        issue_pread  = issue_pread_uring;
+    }
+    for (i = 0; i < aid->num_urings; i++) {
+        ABT_mutex_create(&aid->uring_state_array[i].op_queue_mutex);
+
+        ret = ABT_pool_create_basic(ABT_POOL_FIFO_WAIT, ABT_POOL_ACCESS_PRIV,
+                                    ABT_FALSE, &aid->uring_state_array[i].pool);
+        if (ret != ABT_SUCCESS) {
+            fprintf(stderr, "Error: unable to create uring pool.\n");
+            goto error;
+        }
+        ret = ABT_sched_create_basic(
+            ABT_SCHED_BASIC_WAIT, 1, &aid->uring_state_array[i].pool,
+            ABT_SCHED_CONFIG_NULL, &aid->uring_state_array[i].sched);
+        if (ret != ABT_SUCCESS) {
+            fprintf(stderr, "Error: unable to create uring sched.\n");
+            goto error;
+        }
+        ret = ABT_xstream_create(aid->uring_state_array[i].sched,
+                                 &aid->uring_state_array[i].xstream);
+        if (ret != ABT_SUCCESS) {
+            fprintf(stderr, "Error: unable to create uring xstream.\n");
+            goto error;
+        }
+
+        aid->uring_state_array[i].aid = aid;
+        ret = ABT_thread_create(aid->uring_state_array[i].pool, uring_engine_fn,
+                                &aid->uring_state_array[i],
+                                ABT_THREAD_ATTR_NULL,
+                                &aid->uring_state_array[i].tid);
+        if (ret != ABT_SUCCESS) {
+            fprintf(stderr, "Error: unable to create uring thread.\n");
+            goto error;
+        }
+    }
+    ABT_barrier_wait(aid->uring_barrier);
+    ABT_barrier_free(&aid->uring_barrier);
+#endif
 
     aid->json_cfg = config;
     return aid;
@@ -158,6 +342,21 @@ abt_io_instance_id abt_io_init_pool(ABT_pool progress_pool)
 
 void abt_io_finalize(abt_io_instance_id aid)
 {
+#ifdef USE_LIBURING
+    int i;
+
+    aid->uring_shutdown_flag = 1;
+    for (i = 0; i < aid->num_urings; i++) {
+        eventfd_write(aid->uring_state_array[i].efd, 1);
+        ABT_thread_join(aid->uring_state_array[i].tid);
+        ABT_xstream_join(aid->uring_state_array[i].xstream);
+        ABT_xstream_free(&aid->uring_state_array[i].xstream);
+        ABT_pool_free(&aid->uring_state_array[i].pool);
+        ABT_mutex_free(&aid->uring_state_array[i].op_queue_mutex);
+    }
+    if (aid->num_urings) free(aid->uring_state_array);
+    if (aid->uring_probe) io_uring_free_probe(aid->uring_probe);
+#endif
     teardown_pool(aid);
     json_object_put(aid->json_cfg);
     free(aid);
@@ -289,20 +488,10 @@ abt_io_op_t* abt_io_open_nb(abt_io_instance_id aid,
         return op;
 }
 
-struct abt_io_pread_state {
-    ssize_t*           ret;
-    int                fd;
-    void*              buf;
-    size_t             count;
-    off_t              offset;
-    ABT_eventual       eventual;
-    abt_io_instance_id aid;
-};
-
 static void abt_io_pread_fn(void* foo)
 {
-    struct abt_io_pread_state* state = foo;
-    double                     start = ABT_get_wtime();
+    struct abt_io_io_state* state = foo;
+    double                  start = ABT_get_wtime();
 
     if (state->aid->do_null_io_read)
         *state->ret = state->count; // uh-oh won't be able to detect end of file
@@ -317,17 +506,17 @@ static void abt_io_pread_fn(void* foo)
     return;
 }
 
-static int issue_pread(abt_io_instance_id aid,
-                       abt_io_op_t*       op,
-                       int                fd,
-                       void*              buf,
-                       size_t             count,
-                       off_t              offset,
-                       ssize_t*           ret)
+static int issue_pread_default(abt_io_instance_id aid,
+                               abt_io_op_t*       op,
+                               int                fd,
+                               void*              buf,
+                               size_t             count,
+                               off_t              offset,
+                               ssize_t*           ret)
 {
-    struct abt_io_pread_state  state;
-    struct abt_io_pread_state* pstate = NULL;
-    int                        rc;
+    struct abt_io_io_state  state;
+    struct abt_io_io_state* pstate = NULL;
+    int                     rc;
 
     if (op == NULL)
         pstate = &state;
@@ -528,20 +717,10 @@ abt_io_op_t* abt_io_read_nb(
         return op;
 }
 
-struct abt_io_pwrite_state {
-    ssize_t*           ret;
-    int                fd;
-    const void*        buf;
-    size_t             count;
-    off_t              offset;
-    ABT_eventual       eventual;
-    abt_io_instance_id aid;
-};
-
 static void abt_io_pwrite_fn(void* foo)
 {
-    struct abt_io_pwrite_state* state = foo;
-    double                      start = ABT_get_wtime();
+    struct abt_io_io_state* state = foo;
+    double                  start = ABT_get_wtime();
 
     if (state->aid->do_null_io_write)
         *state->ret = state->count;
@@ -557,17 +736,17 @@ static void abt_io_pwrite_fn(void* foo)
     return;
 }
 
-static int issue_pwrite(abt_io_instance_id aid,
-                        abt_io_op_t*       op,
-                        int                fd,
-                        const void*        buf,
-                        size_t             count,
-                        off_t              offset,
-                        ssize_t*           ret)
+static int issue_pwrite_default(abt_io_instance_id aid,
+                                abt_io_op_t*       op,
+                                int                fd,
+                                const void*        buf,
+                                size_t             count,
+                                off_t              offset,
+                                ssize_t*           ret)
 {
-    struct abt_io_pwrite_state  state;
-    struct abt_io_pwrite_state* pstate = NULL;
-    int                         rc;
+    struct abt_io_io_state  state;
+    struct abt_io_io_state* pstate = NULL;
+    int                     rc;
 
     if (op == NULL)
         pstate = &state;
@@ -582,7 +761,7 @@ static int issue_pwrite(abt_io_instance_id aid,
     *ret             = -ENOSYS;
     pstate->ret      = ret;
     pstate->fd       = fd;
-    pstate->buf      = buf;
+    pstate->buf      = (void*)buf;
     pstate->count    = count;
     pstate->offset   = offset;
     pstate->eventual = NULL;
@@ -1810,6 +1989,7 @@ static int validate_and_complete_config(struct json_object* _config,
     struct json_object* val;
     struct json_object* _internal_pool;
     int                 backing_thread_count = -1; /* sentinal value */
+    struct json_object* array;
 
     /* ------- abt-io configuration examples ------
      *
@@ -1825,6 +2005,13 @@ static int validate_and_complete_config(struct json_object* _config,
      * "trace_io" records every ABT-IO operation along with information like
      * offset, size, and duration
      * {"trace_io": false}
+     *
+     * "num_urings" indicates how many urings (if any) should be activated
+     * to process supported operations.  Each uring will consume exactly one
+     * xstream from the progress pool, so the progress pool must be at least
+     * of size num_urings+1 in order to handle operations that cannot be
+     * performed with liburing.
+     * {"num_urings": 0}
      *
      * optional input fields for convenience:
      * --------------
@@ -1870,6 +2057,11 @@ static int validate_and_complete_config(struct json_object* _config,
     if (!CONFIG_HAS(_config, "trace_io", val)) {
         CONFIG_OVERRIDE_BOOL(_config, "trace_io", 0, "trace_io", 0);
     }
+
+    if (!CONFIG_HAS(_config, "num_urings", val)) {
+        CONFIG_OVERRIDE_INTEGER(_config, "num_urings", 0, "num_urings", 0);
+    }
+
     /* check if thread count convenience field is set */
     if (CONFIG_HAS(_config, "backing_thread_count", val)) {
         backing_thread_count = json_object_get_int(val);
@@ -1894,7 +2086,13 @@ static int validate_and_complete_config(struct json_object* _config,
         /* denote that abt-io is _not_ using internal pool */
         CONFIG_OVERRIDE_BOOL(_config, "internal_pool_flag", 0,
                              "internal_pool_flag", 1);
+
+        /* NOTE: there is not an easy way to tell how many xstreams are
+         * assoicated with an externally-provided pool.  We have to trust
+         * that it has at least one more than the value of num_urings.
+         */
     } else {
+
         /* denote that abt-io is using it's own internal pool */
         CONFIG_OVERRIDE_BOOL(_config, "internal_pool_flag", 1,
                              "internal_pool_flag", 0);
@@ -1923,6 +2121,35 @@ static int validate_and_complete_config(struct json_object* _config,
         CONFIG_OVERRIDE_STRING(_internal_pool, "access", "mpmc",
                                "internal_pool.kind", 1);
     }
+
+    /* optional liburing flags */
+    array = json_object_object_get(_config, "liburing_flags");
+    if (array && !json_object_is_type(array, json_type_array)) {
+        fprintf(stderr,
+                "Error: \"liburing_flags\" is in configuration but is not an "
+                "array.\n");
+        return (-1);
+    } else if (!array) {
+        /* Create array with default flags.  Presently we set no flags
+         * automatically, but this could change in the future. */
+        /* Note that unlike uring opcodes, it is difficult to detect
+         * supported flags at runtime, so be cautious when adding flags that
+         * may not be supported in older Linux kernels.
+         */
+        array = json_object_new_array();
+        json_object_object_add(_config, "liburing_flags", array);
+    }
+
+#ifndef USE_LIBURING
+    int sanity_num_urings
+        = json_object_get_int(json_object_object_get(_config, "num_urings"));
+    if (sanity_num_urings > 0) {
+        fprintf(stderr,
+                "abt-io error: num_urings is non-zero but mochi-abt-io was not "
+                "compiled with --enable-liburing\n");
+        return (-1);
+    }
+#endif
 
     return (0);
 }
@@ -2014,3 +2241,319 @@ static void teardown_pool(abt_io_instance_id aid)
 
     return;
 }
+
+#ifdef USE_LIBURING
+
+static void uring_engine_fn(void* foo)
+{
+    struct uring_engine_state* ues = foo;
+    int                        ret;
+    struct io_uring_cqe*       cqe;
+    struct io_uring_sqe*       sqe;
+    struct uring_op_state*     op_state;
+    struct uring_op_state*     tmp;
+    int64_t*                   result;
+    ABT_eventual               ev;
+
+    /* initialize uring queue */
+    ret = io_uring_queue_init(DEFAULT_URING_ENTRIES, &ues->ring,
+                              ues->aid->uring_setup_flags);
+    if (ret != 0) {
+        fprintf(stderr, "Error: io_uring_queue_init() failure.\n");
+        return;
+    }
+
+    /* create event fd that can be used to wake this engine */
+    ues->efd = eventfd(0, EFD_NONBLOCK);
+    sqe      = io_uring_get_sqe(&ues->ring);
+    io_uring_prep_poll_add(sqe, ues->efd, POLLIN);
+    io_uring_sqe_set_data(sqe, NULL);
+    ret = io_uring_submit(&ues->ring);
+    assert(ret >= 0);
+
+    /* wait on barrier once we are ready to process operations */
+
+    /* The purpose here is to make sure that all engines are ready before we
+     * proceed.  The caller of the initialize function waits in the
+     * same barrier so that initialization does not complete until all engines
+     * are ready.
+     */
+    ABT_barrier_wait(ues->aid->uring_barrier);
+
+    while (!ues->aid->uring_shutdown_flag) {
+        /* NOTE: we intentionally do not use a timeout here.  Something
+         * external (e.g., an eventfd signal) will break this
+         * function out of the wait when needed.
+         */
+
+        /* drain operation queue */
+        ABT_mutex_lock(ues->op_queue_mutex);
+        DL_FOREACH_SAFE(ues->op_queue, op_state, tmp)
+        {
+            DL_DELETE(ues->op_queue, op_state);
+            DL_APPEND(ues->op_working_set, op_state);
+        }
+        ABT_mutex_unlock(ues->op_queue_mutex);
+
+        /* for each operation that we found above, submit to uring */
+        /* NOTE that this is intentionally done in a separate loop so that
+         * we don't have to hold the op_queue_mutex across the submissions
+         */
+        DL_FOREACH_SAFE(ues->op_working_set, op_state, tmp)
+        {
+            DL_DELETE(ues->op_working_set, op_state);
+            sqe = io_uring_get_sqe(&ues->ring);
+            /* prepare op */
+            switch (op_state->op_type) {
+            case IORING_OP_WRITE:
+                io_uring_prep_write(
+                    sqe, op_state->u.io_state.fd, op_state->u.io_state.buf,
+                    op_state->u.io_state.count, op_state->u.io_state.offset);
+                break;
+            case IORING_OP_WRITEV:
+                io_uring_prep_writev(sqe, op_state->u.io_state.fd,
+                                     &op_state->u.io_state.vec, 1,
+                                     op_state->u.io_state.offset);
+                break;
+            case IORING_OP_READ:
+                io_uring_prep_read(
+                    sqe, op_state->u.io_state.fd, op_state->u.io_state.buf,
+                    op_state->u.io_state.count, op_state->u.io_state.offset);
+                break;
+            case IORING_OP_READV:
+                io_uring_prep_readv(sqe, op_state->u.io_state.fd,
+                                    &op_state->u.io_state.vec, 1,
+                                    op_state->u.io_state.offset);
+                break;
+            default:
+                assert(0);
+            }
+            /* same flags and data for all ops */
+            io_uring_sqe_set_data(sqe, op_state);
+            io_uring_sqe_set_flags(sqe, ues->aid->uring_sqe_flags);
+            /* submit to ring */
+            ret = io_uring_submit(&ues->ring);
+            assert(ret >= 0);
+        }
+
+        /* Wait for operations to complete or for an external caller to wake
+         * the engine up to find new operations to submit.
+         */
+        ret = io_uring_wait_cqe(&ues->ring, &cqe);
+        if (ret == 0) {
+            if (cqe->user_data) {
+                op_state = (struct uring_op_state*)cqe->user_data;
+                switch (op_state->op_type) {
+                case IORING_OP_WRITE:
+                case IORING_OP_READ:
+                case IORING_OP_WRITEV:
+                case IORING_OP_READV:
+                    result = op_state->u.io_state.ret;
+                    ev     = op_state->u.io_state.eventual;
+                    ABT_mutex_lock(ues->op_queue_mutex);
+                    ABT_mutex_unlock(ues->op_queue_mutex);
+                    break;
+                default:
+                    assert(0);
+                }
+                *result = cqe->res;
+                ABT_eventual_set(ev, NULL, 0);
+            } else {
+                uint64_t tmp_ev;
+                /* If user data was not set then we assume that this was
+                 * just a wake up event.
+                 */
+
+                /* Clear the eventfd to reset the counter and prepare to
+                 * poll it again.  Note that the eventfd is in nonblocking
+                 * mode to ensure that we don't block if this was a
+                 * spurious event.  Ignore return code and event value.
+                 */
+                eventfd_read(ues->efd, &tmp_ev);
+                sqe = io_uring_get_sqe(&ues->ring);
+                io_uring_prep_poll_add(sqe, ues->efd, POLLIN);
+                io_uring_sqe_set_data(sqe, NULL);
+                ret = io_uring_submit(&ues->ring);
+                assert(ret >= 0);
+            }
+            io_uring_cqe_seen(&ues->ring, cqe);
+        }
+    }
+
+    io_uring_queue_exit(&ues->ring);
+
+    return;
+}
+
+static int issue_pwrite_uring(abt_io_instance_id aid,
+                              abt_io_op_t*       op,
+                              int                fd,
+                              const void*        buf,
+                              size_t             count,
+                              off_t              offset,
+                              ssize_t*           ret)
+{
+    struct uring_op_state  state;
+    struct uring_op_state* opstate = NULL;
+    int                    rc;
+    int                    uring_engine_index;
+
+    if (op == NULL)
+        opstate = &state;
+    else {
+        opstate = malloc(sizeof(*opstate));
+        if (opstate == NULL) {
+            *ret = -ENOMEM;
+            goto err;
+        }
+    }
+
+    *ret = -ENOSYS;
+    if (aid->uring_probe
+        && io_uring_opcode_supported(aid->uring_probe, IORING_OP_WRITE)) {
+        opstate->op_type          = IORING_OP_WRITE;
+        opstate->u.io_state.count = count;
+        opstate->u.io_state.buf   = (void*)buf;
+    } else {
+        /* older kernels only support WRITEV */
+        opstate->op_type                 = IORING_OP_WRITEV;
+        opstate->u.io_state.vec.iov_len  = count;
+        opstate->u.io_state.vec.iov_base = (void*)buf;
+    }
+    opstate->u.io_state.offset   = offset;
+    opstate->u.io_state.ret      = ret;
+    opstate->u.io_state.fd       = fd;
+    opstate->u.io_state.eventual = NULL;
+    opstate->u.io_state.aid      = aid;
+    rc = ABT_eventual_create(0, &opstate->u.io_state.eventual);
+    if (rc != ABT_SUCCESS) {
+        *ret = -ENOMEM;
+        goto err;
+    }
+
+    if (op != NULL) op->e = opstate->u.io_state.eventual;
+
+    /* find ring to submit to; just round robin */
+    uring_engine_index = aid->uring_op_counter++;
+    uring_engine_index %= aid->num_urings;
+
+    /* enqueue operation for engine to pick up */
+    ABT_mutex_lock(aid->uring_state_array[uring_engine_index].op_queue_mutex);
+    DL_APPEND(aid->uring_state_array[uring_engine_index].op_queue, opstate);
+    ABT_mutex_unlock(aid->uring_state_array[uring_engine_index].op_queue_mutex);
+
+    /* Signal the corresponding uring engine to break out of its cqe wait
+     * and process this operation.
+     */
+    eventfd_write(aid->uring_state_array[uring_engine_index].efd, 1);
+
+    /* wait for completion, if we are in blocking mode */
+    if (op == NULL) {
+        rc = ABT_eventual_wait(opstate->u.io_state.eventual, NULL);
+        // what error should we use here?
+        if (rc != ABT_SUCCESS) {
+            *ret = -EINVAL;
+            goto err;
+        }
+    } else {
+        op->e       = opstate->u.io_state.eventual;
+        op->state   = opstate;
+        op->free_fn = free;
+    }
+
+    if (op == NULL) ABT_eventual_free(&opstate->u.io_state.eventual);
+    return 0;
+err:
+    if (opstate->u.io_state.eventual != NULL)
+        ABT_eventual_free(&opstate->u.io_state.eventual);
+    if (opstate != NULL && op != NULL) free(opstate);
+    return -1;
+}
+
+static int issue_pread_uring(abt_io_instance_id aid,
+                             abt_io_op_t*       op,
+                             int                fd,
+                             void*              buf,
+                             size_t             count,
+                             off_t              offset,
+                             ssize_t*           ret)
+{
+    struct uring_op_state  state;
+    struct uring_op_state* opstate = NULL;
+    int                    rc;
+    int                    uring_engine_index;
+
+    if (op == NULL)
+        opstate = &state;
+    else {
+        opstate = malloc(sizeof(*opstate));
+        if (opstate == NULL) {
+            *ret = -ENOMEM;
+            goto err;
+        }
+    }
+
+    /* TODO: replace this with liburing utility function instead of
+     * accessing probe structure directly.
+     */
+    *ret = -ENOSYS;
+    if (aid->uring_probe && aid->uring_probe->last_op >= IORING_OP_READ) {
+        opstate->op_type          = IORING_OP_READ;
+        opstate->u.io_state.buf   = buf;
+        opstate->u.io_state.count = count;
+    } else {
+        /* older kernels only support READV */
+        opstate->op_type                 = IORING_OP_READV;
+        opstate->u.io_state.vec.iov_base = buf;
+        opstate->u.io_state.vec.iov_len  = count;
+    }
+    opstate->u.io_state.ret      = ret;
+    opstate->u.io_state.fd       = fd;
+    opstate->u.io_state.offset   = offset;
+    opstate->u.io_state.eventual = NULL;
+    opstate->u.io_state.aid      = aid;
+    rc = ABT_eventual_create(0, &opstate->u.io_state.eventual);
+    if (rc != ABT_SUCCESS) {
+        *ret = -ENOMEM;
+        goto err;
+    }
+
+    if (op != NULL) op->e = opstate->u.io_state.eventual;
+
+    /* find ring to submit to; just round robin */
+    uring_engine_index = aid->uring_op_counter++;
+    uring_engine_index %= aid->num_urings;
+
+    /* enqueue operation for engine to pick up */
+    ABT_mutex_lock(aid->uring_state_array[uring_engine_index].op_queue_mutex);
+    DL_APPEND(aid->uring_state_array[uring_engine_index].op_queue, opstate);
+    ABT_mutex_unlock(aid->uring_state_array[uring_engine_index].op_queue_mutex);
+
+    /* Signal the corresponding uring engine to break out of its cqe wait
+     * and process this operation.
+     */
+    eventfd_write(aid->uring_state_array[uring_engine_index].efd, 1);
+
+    /* wait for completion, if we are in blocking mode */
+    if (op == NULL) {
+        rc = ABT_eventual_wait(opstate->u.io_state.eventual, NULL);
+        // what error should we use here?
+        if (rc != ABT_SUCCESS) {
+            *ret = -EINVAL;
+            goto err;
+        }
+    } else {
+        op->e       = opstate->u.io_state.eventual;
+        op->state   = opstate;
+        op->free_fn = free;
+    }
+
+    if (op == NULL) ABT_eventual_free(&opstate->u.io_state.eventual);
+    return 0;
+err:
+    if (opstate->u.io_state.eventual != NULL)
+        ABT_eventual_free(&opstate->u.io_state.eventual);
+    if (opstate != NULL && op != NULL) free(opstate);
+    return -1;
+}
+#endif

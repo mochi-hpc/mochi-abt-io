@@ -7,7 +7,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-//#include <sys/statfs.h>
+// #include <sys/statfs.h>
 #include <fcntl.h>
 #include <float.h>
 #include <errno.h>
@@ -16,10 +16,11 @@
 #include <abt-io.h>
 #include <abt-io-config.h>
 
-char* readfile(const char* filename) {
-    FILE *f = fopen(filename, "r");
-    int ret;
-    if(!f) {
+char* readfile(const char* filename)
+{
+    FILE* f = fopen(filename, "r");
+    int   ret;
+    if (!f) {
         perror("fopen");
         fprintf(stderr, "\tCould not open json file \"%s\"\n", filename);
         exit(EXIT_FAILURE);
@@ -28,8 +29,8 @@ char* readfile(const char* filename) {
     long fsize = ftell(f);
     fseek(f, 0, SEEK_SET);
     char* string = malloc(fsize + 1);
-    ret = fread(string, 1, fsize, f);
-    if(ret < 0) {
+    ret          = fread(string, 1, fsize, f);
+    if (ret < 0) {
         perror("fread");
         fprintf(stderr, "\tCould not read json file \"%s\"\n", filename);
         exit(EXIT_FAILURE);
@@ -39,22 +40,21 @@ char* readfile(const char* filename) {
     return string;
 }
 
-
 /* test program to exercise a few basic abt-io functions */
 
 int main(int argc, char** argv)
 {
-    int                ret;
-    ABT_sched          self_sched;
-    ABT_xstream        self_xstream;
-    abt_io_instance_id aid;
-    struct abt_io_init_info args = { 0 };
-    int                fd;
+    int                     ret;
+    ABT_sched               self_sched;
+    ABT_xstream             self_xstream;
+    abt_io_instance_id      aid;
+    struct abt_io_init_info args = {0};
+    int                     fd;
     char template[64];
 
     ABT_init(argc, argv);
 
-    args.json_config = argc > 1 ? readfile (argv[1]) : NULL;
+    args.json_config = argc > 1 ? readfile(argv[1]) : NULL;
 
     /* set caller (self) ES to sleep when idle by using SCHED_BASIC_WAIT */
     ret = ABT_sched_create_basic(ABT_SCHED_BASIC_WAIT, 0, NULL,
@@ -68,8 +68,10 @@ int main(int argc, char** argv)
     /* start up abt-io */
     if (args.json_config == NULL)
         aid = abt_io_init(2);
-    else
+    else {
         aid = abt_io_init_ext(&args);
+        free((void*)args.json_config);
+    }
 
     assert(aid != NULL);
 
