@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.67])
-AC_INIT([abt-io], [0.6.0], [],[],[])
+AC_INIT([abt-io], [0.7.0], [],[],[])
 AC_CONFIG_MACRO_DIRS([m4])
 LT_INIT
 
@@ -148,9 +148,12 @@ if test "$enable_liburing" = "yes"; then
          [AC_SEARCH_LIBS([io_uring_get_probe], [uring],
           [], [AC_MSG_ERROR(mochi-abt-io requires a version of liburing with io_uring_get_probe support)])]
         )
+        PC_REQUIRES="argobots json-c liburing"
 else
+        PC_REQUIRES="argobots json-c"
         USE_LIBURING=0
 fi
+AC_SUBST([PC_REQUIRES], ["$PC_REQUIRES"])
 AC_SUBST(USE_LIBURING)
 AM_CONDITIONAL([BUILD_LIBURING], [test "x${build_liburing}" = xyes])
 
