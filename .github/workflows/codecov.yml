@@ -38,7 +38,7 @@ jobs:
       run: |
         eval `spack env activate --sh tests`
         ./prepare.sh &&
-        ./configure --enable-coverage --prefix=`pwd`
+        ./configure --enable-liburing --enable-coverage --prefix=`pwd`
         make check
 
     - uses: codecov/codecov-action@v3

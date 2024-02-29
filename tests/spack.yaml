@@ -12,6 +12,7 @@ spack:
   - libtool
   - pkg-config
   - argobots
+  - liburing
   concretizer:
     unify: true
     reuse: true

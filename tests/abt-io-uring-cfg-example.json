@@ -1,0 +1,10 @@
+{
+  "num_urings":1,
+  "internal_pool_flag":true,
+  "internal_pool":{
+    "num_xstreams":1,
+    "kind":"fifo_wait",
+    "access":"mpmc"
+  },
+  "liburing_flags":[]
+}
