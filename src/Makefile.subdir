@@ -1,2 +1,7 @@
 src_libabt_io_la_SOURCES += \
- src/abt-io.c
+  src/abt-io.c
+
+if ENABLE_BEDROCK
+  src_libabt_io_bedrock_module_la_SOURCES += src/bedrock-module.cpp
+  src_libabt_io_bedrock_module_la_LIBADD = src/libabt-io.la
+endif

@@ -6,7 +6,7 @@ bin_SCRIPTS =
 noinst_PROGRAMS =
 noinst_HEADERS =
 TESTS =
-XFAIL_TESTS = 
+XFAIL_TESTS =
 check_PROGRAMS =
 EXTRA_PROGRAMS =
 CLEANFILES = $(bin_SCRIPTS)
@@ -16,7 +16,7 @@ BUILT_SOURCES =
 include_HEADERS = include/abt-io.h
 
 EXTRA_DIST += \
- prepare.sh 
+ prepare.sh
 
 AM_CPPFLAGS = -I$(top_srcdir)/include
 
@@ -28,6 +28,11 @@ AM_CXXFLAGS = $(AM_CFLAGS)
 
 lib_LTLIBRARIES = src/libabt-io.la
 src_libabt_io_la_SOURCES =
+
+if ENABLE_BEDROCK
+lib_LTLIBRARIES += src/libabt-io-bedrock-module.la
+src_libabt_io_bedrock_module_la_SOURCES =
+endif
 
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = maint/abt-io.pc

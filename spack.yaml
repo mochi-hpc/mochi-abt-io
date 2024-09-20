@@ -8,6 +8,8 @@ spack:
   - pkg-config
   - argobots
   - liburing
+  - mochi-bedrock-module-api
+  - zlib
   concretizer:
     unify: true
     reuse: true
@@ -15,3 +17,6 @@ spack:
     prefix_inspections:
       lib: [LD_LIBRARY_PATH]
       lib64: [LD_LIBRARY_PATH]
+  packages:
+    mochi-bedrock-module-api:
+      require: "@0.2.0:"
