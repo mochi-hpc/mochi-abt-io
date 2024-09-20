@@ -13,6 +13,8 @@ spack:
   - pkg-config
   - argobots
   - liburing
+  - mochi-bedrock-module-api
+  - zlib
   concretizer:
     unify: true
     reuse: true
@@ -27,3 +29,6 @@ spack:
   config:
     install_tree:
       padded_length: 128
+  packages:
+    mochi-bedrock-module-api:
+      require: "@0.2.0:"

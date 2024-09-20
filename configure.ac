@@ -72,6 +72,29 @@ JSONC_CFLAGS=`echo $JSONC_CFLAGS | sed 's/\/include\/json-c/\/include/g'`
 CPPFLAGS="$JSONC_CFLAGS $CPPFLAGS"
 CFLAGS="$JSONC_CFLAGS $CFLAGS"
 
+AC_ARG_ENABLE(bedrock,
+    [AS_HELP_STRING([--enable-bedrock],[Enable bedrock support @<:@default=no@:>@])],
+    [case "${enableval}" in
+     yes) enable_bedrock="yes" ;;
+     no) enable_bedrock="no" ;;
+     *) AC_MSG_ERROR(bad value ${enableval} for --enable-bedrock) ;;
+     esac],
+    [enable_bedrock="no"]
+)
+AM_CONDITIONAL(ENABLE_BEDROCK, test x$enable_bedrock = xyes)
+if test "$enable_bedrock" = "yes"; then
+    PKG_CHECK_MODULES(BEDROCK, bedrock-module-api)
+    AC_DEFINE(ABTIO_USE_BEDROCK, 1, [Bedrock support enabled.])
+    ABTIO_USE_BEDROCK=1
+    CPPFLAGS="$BEDROCK_CPPFLAGS $CPPFLAGS"
+    CXXFLAGS="$BEDROCK_CXXFLAGS $BEDROCK_CFLAGS $CXXFLAGS"
+    CFLAGS="$BEDROCK_CFLAGS $CFLAGS"
+else
+    ABTIO_USE_BEDROCK=0
+fi
+AC_SUBST(ABTIO_USE_BEDROCK)
+
+
 AC_MSG_CHECKING([for fallocate])
 AC_TRY_LINK([
 #define _GNU_SOURCE
