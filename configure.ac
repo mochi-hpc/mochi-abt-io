@@ -73,13 +73,13 @@ CPPFLAGS="$JSONC_CFLAGS $CPPFLAGS"
 CFLAGS="$JSONC_CFLAGS $CFLAGS"
 
 AC_ARG_ENABLE(bedrock,
-    [AS_HELP_STRING([--enable-bedrock],[Enable bedrock support @<:@default=yes@:>@])],
+    [AS_HELP_STRING([--enable-bedrock],[Enable bedrock support @<:@default=no@:>@])],
     [case "${enableval}" in
      yes) enable_bedrock="yes" ;;
      no) enable_bedrock="no" ;;
      *) AC_MSG_ERROR(bad value ${enableval} for --enable-bedrock) ;;
      esac],
-    [enable_bedrock="yes"]
+    [enable_bedrock="no"]
 )
 AM_CONDITIONAL(ENABLE_BEDROCK, test x$enable_bedrock = xyes)
 if test "$enable_bedrock" = "yes"; then
