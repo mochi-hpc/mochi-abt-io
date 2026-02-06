@@ -1,0 +1,18 @@
+/*
+ * (C) 2015 The University of Chicago
+ *
+ * See COPYRIGHT in top-level directory.
+ */
+
+#ifndef ABT_IO_CONFIG_H
+#define ABT_IO_CONFIG_H
+
+#cmakedefine ABTIO_USE_BEDROCK
+#cmakedefine USE_LIBURING
+#cmakedefine HAVE_FALLOCATE
+#cmakedefine HAVE_ODIRECT
+#cmakedefine HAVE_MKOSTEMP
+
+#define PACKAGE_VERSION "@PROJECT_VERSION@"
+
+#endif /* ABT_IO_CONFIG_H */

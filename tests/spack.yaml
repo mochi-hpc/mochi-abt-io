@@ -6,10 +6,7 @@
 spack:
   specs:
   - json-c
-  - autoconf
-  - m4
-  - automake
-  - libtool
+  - cmake
   - pkg-config
   - argobots
   - liburing

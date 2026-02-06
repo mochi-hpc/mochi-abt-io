@@ -37,33 +37,35 @@ jobs:
     - name: Build code and run unit tests
       run: |
         eval `spack env activate --sh tests`
-        ./prepare.sh
-        ./configure --prefix=`pwd`
-        make check
-        make clean
+        mkdir build && cd build
+        cmake .. -DCMAKE_INSTALL_PREFIX=`pwd`/install -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH"
+        make
+        ctest --output-on-failure
+        cd .. && rm -rf build
 
     - name: Build code and run unit tests with liburing
       run: |
         eval `spack env activate --sh tests`
-        ./prepare.sh
-        ./configure --enable-liburing --prefix=`pwd`
-        make check
-        make clean
+        mkdir build && cd build
+        cmake .. -DENABLE_LIBURING=ON -DCMAKE_INSTALL_PREFIX=`pwd`/install -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH"
+        make
+        ctest --output-on-failure
+        cd .. && rm -rf build
 
     - name: Rebuild code and run unit tests with ASAN
       run: |
         eval `spack env activate --sh tests`
-        CFLAGS="-fno-omit-frame-pointer -g -Wall -fsanitize=address" LDFLAGS="-fsanitize=address" ./configure --prefix=`pwd` &&
-        ASAN_OPTIONS="abort_on_error=1" make check
+        mkdir build && cd build
+        cmake .. -DCMAKE_C_FLAGS="-fno-omit-frame-pointer -g -Wall -fsanitize=address" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address" -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address" -DCMAKE_INSTALL_PREFIX=`pwd`/install -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH"
+        make
+        ASAN_OPTIONS="abort_on_error=1" ctest --output-on-failure
+        cd .. && rm -rf build
 
     - name: Rebuild code and run unit tests with ASAN and liburing
       run: |
         eval `spack env activate --sh tests`
-        CFLAGS="-fno-omit-frame-pointer -g -Wall -fsanitize=address" LDFLAGS="-fsanitize=address" ./configure --enable-liburing --prefix=`pwd` &&
-        ASAN_OPTIONS="abort_on_error=1" make check
-
-    - name: Show test output
-      if: always()
-      run: |
-        cat test-suite.log
-        cat tests/*.log
+        mkdir build && cd build
+        cmake .. -DENABLE_LIBURING=ON -DCMAKE_C_FLAGS="-fno-omit-frame-pointer -g -Wall -fsanitize=address" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address" -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address" -DCMAKE_INSTALL_PREFIX=`pwd`/install -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH"
+        make
+        ASAN_OPTIONS="abort_on_error=1" ctest --output-on-failure
+        cd .. && rm -rf build
