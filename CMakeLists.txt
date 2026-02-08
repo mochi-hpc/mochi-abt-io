@@ -96,6 +96,7 @@ add_subdirectory (src)
 
 if (ENABLE_EXAMPLES)
     add_subdirectory (examples)
+    add_subdirectory (docs/examples/abtio)
 endif ()
 
 if (ENABLE_TESTS)
