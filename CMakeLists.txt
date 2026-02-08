@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.14)
-project (abt-io VERSION 0.8.1 LANGUAGES C CXX)
+project (abt-io VERSION 0.9.0 LANGUAGES C CXX)
 
 include (GNUInstallDirs)
 include (CMakePackageConfigHelpers)
