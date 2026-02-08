@@ -5,7 +5,7 @@ ABT-IO provides an API to issue I/O operations in a non-blocking
 manner and wait for completion later. The following code
 examplifies this feature,
 
-.. literalinclude:: ../../examples/abtio/03_async/main.c
+.. literalinclude:: ../../examples/abt-io/03_async/main.c
        :language: cpp
 
 Every ABT-IO function described in :ref:`abtio_issuing` has a corresponding non-blocking variant. These

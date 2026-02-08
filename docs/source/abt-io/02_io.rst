@@ -5,7 +5,7 @@ Issuing I/O operations
 
 Once initialized, ABT-IO can be used to issue I/O operations as follows.
 
-.. literalinclude:: ../../examples/abtio/02_io/main.c
+.. literalinclude:: ../../examples/abt-io/02_io/main.c
        :language: cpp
 
 The list of available I/O operations is the following.

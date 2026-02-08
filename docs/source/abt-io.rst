@@ -42,7 +42,7 @@ Framework," in IEEE Transactions on Parallel and Distributed Systems, vol.
 .. toctree::
    :maxdepth: 1
 
-   abtio/01_init.rst
-   abtio/02_io.rst
-   abtio/03_async.rst
-   abtio/04_uring.rst
+   abt-io/01_init.rst
+   abt-io/02_io.rst
+   abt-io/03_async.rst
+   abt-io/04_uring.rst

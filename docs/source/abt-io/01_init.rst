@@ -6,7 +6,7 @@ ABT-IO must be initialized after Argobots and finalized before it.
 The :code:`abt_io_init` function takes the number of ES to create
 for handling I/O operations.
 
-.. literalinclude:: ../../examples/abtio/01_init/main.c
+.. literalinclude:: ../../examples/abt-io/01_init/main.c
        :language: cpp
 
 More advanced tuning and configuration options can be controlled using the
