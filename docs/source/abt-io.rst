@@ -46,3 +46,4 @@ Framework," in IEEE Transactions on Parallel and Distributed Systems, vol.
    abt-io/02_io.rst
    abt-io/03_async.rst
    abt-io/04_uring.rst
+   abt-io/c_api.rst
