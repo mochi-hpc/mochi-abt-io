@@ -1,4 +1,4 @@
-add_library (abt-io abt-io.c)
+add_library (abt-io SHARED abt-io.c)
 target_include_directories (abt-io
     PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
@@ -30,7 +30,7 @@ install (TARGETS abt-io
 
 # Bedrock module
 if (ENABLE_BEDROCK)
-    add_library (abt-io-bedrock-module bedrock-module.cpp)
+    add_library (abt-io-bedrock-module SHARED bedrock-module.cpp)
     target_link_libraries (abt-io-bedrock-module
         PUBLIC abt-io PkgConfig::BEDROCK
     )
